@@ -1,4 +1,4 @@
-name: Docker Hub Deploy
+name: GitHub Container Registry Deploy
 
 on:
   push:
@@ -10,6 +10,10 @@ jobs:
     # Only run on push, not PRs
     if: github.event_name != 'pull_request'
 
+    permissions:
+      contents: read
+      packages: write
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -20,11 +24,12 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Login to Docker Hub
+    - name: Login to GitHub Container Registry
       uses: docker/login-action@v3
       with:
-        username: eiliya
-        password: ${{ secrets.DOCKER_HUB_TOKEN }}
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
@@ -33,8 +38,8 @@ jobs:
         platforms: linux/amd64,linux/arm64
         push: true
         tags: |
-          eiliya/lite:latest
-          eiliya/lite:${{ github.sha }}
+          ghcr.io/eiliyaabedini/litellm:latest
+          ghcr.io/eiliyaabedini/litellm:${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
         build-args: |
