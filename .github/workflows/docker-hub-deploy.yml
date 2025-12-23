@@ -38,8 +38,8 @@ jobs:
         platforms: linux/amd64,linux/arm64
         push: true
         tags: |
-          ghcr.io/eiliyaabedini/litellm:latest
-          ghcr.io/eiliyaabedini/litellm:${{ github.sha }}
+          ghcr.io/aipass-one/litellm:latest
+          ghcr.io/aipass-one/litellm:${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
         build-args: |
