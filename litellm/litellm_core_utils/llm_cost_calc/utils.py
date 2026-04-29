@@ -964,6 +964,18 @@ class CostCalculatorUtils:
                 image_response=completion_response,
             )
         elif custom_llm_provider == litellm.LlmProviders.FAL_AI.value:
+            # gpt-image-2 uses tiered {quality}/{size} pricing — route to the
+            # default calculator so the composite-key lookup at
+            # cost_calculator.py:1968 picks the right entry.
+            if "gpt-image-2" in model.lower():
+                return default_image_cost_calculator(
+                    model=model,
+                    quality=quality,
+                    custom_llm_provider=custom_llm_provider,
+                    n=n,
+                    size=size,
+                    optional_params=optional_params,
+                )
             from litellm.llms.fal_ai.cost_calculator import (
                 cost_calculator as fal_ai_image_cost_calculator,
             )

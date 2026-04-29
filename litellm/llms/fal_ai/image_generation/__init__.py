@@ -6,6 +6,7 @@ from .bria_transformation import FalAIBriaConfig
 from .flux_pro_v11_transformation import FalAIFluxProV11Config
 from .flux_pro_v11_ultra_transformation import FalAIFluxProV11UltraConfig
 from .flux_schnell_transformation import FalAIFluxSchnellConfig
+from .gpt_image2_transformation import FalAIGptImage2Config
 from .imagen4_transformation import FalAIImagen4Config
 from .recraft_v3_transformation import FalAIRecraftV3Config
 from .ideogram_v3_transformation import FalAIIdeogramV3Config
@@ -19,6 +20,7 @@ from .bytedance_transformation import (
 __all__ = [
     "FalAIBaseConfig",
     "FalAIImageGenerationConfig",
+    "FalAIGptImage2Config",
     "FalAIImagen4Config",
     "FalAIRecraftV3Config",
     "FalAIBriaConfig",
@@ -45,6 +47,8 @@ def get_fal_ai_image_generation_config(model: str) -> BaseImageGenerationConfig:
     model_lower = model.lower()
 
     # Map model names to their corresponding configuration classes
+    if "gpt-image-2" in model_lower:
+        return FalAIGptImage2Config()
     if "imagen4" in model_lower or "imagen-4" in model_lower:
         return FalAIImagen4Config()
     elif "recraft" in model_lower:
