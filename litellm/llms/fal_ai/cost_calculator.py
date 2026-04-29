@@ -9,8 +9,29 @@ def cost_calculator(
     image_response: Any,
 ) -> float:
     """
-    fal.ai image generation cost calculator
+    fal.ai image generation cost calculator.
+
+    Most Fal models are flat-priced per image. ``fal-ai/clarity-upscaler``
+    uses pixel-based pricing (Fal bills $0.03/MP output) and is resolved
+    via ``default_image_cost_calculator``'s ``input_cost_per_pixel`` path —
+    the transformation stamps ``image_response.size`` from the output
+    dimensions so width × height × per_pixel returns the correct cost.
     """
+    if "clarity-upscaler" in model.lower():
+        from litellm.cost_calculator import default_image_cost_calculator
+
+        num_images = (
+            len(image_response.data)
+            if isinstance(image_response, ImageResponse) and image_response.data
+            else 1
+        )
+        return default_image_cost_calculator(
+            model=model,
+            custom_llm_provider=litellm.LlmProviders.FAL_AI.value,
+            n=num_images,
+            size=image_response.size,
+        )
+
     _model_info = litellm.get_model_info(
         model=model,
         custom_llm_provider=litellm.LlmProviders.FAL_AI.value,
