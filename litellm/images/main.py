@@ -43,7 +43,6 @@ from openai.types.audio.transcription_create_params import FileTypes  # type: ig
 # BFL handlers
 from litellm.llms.black_forest_labs.image_edit.handler import bfl_image_edit
 from litellm.llms.black_forest_labs.image_generation.handler import bfl_image_generation
-from litellm.llms.fal_ai.image_edit.handler import fal_ai_image_edit
 from litellm.main import (
     azure_chat_completions,
     base_llm_aiohttp_handler,
@@ -953,23 +952,6 @@ def image_edit(  # noqa: PLR0915
                 raise Exception("Model needs to be set for black_forest_labs")
             image_edit_request_params.update(non_default_params)
             return bfl_image_edit.image_edit(
-                model=model,
-                image=images,
-                prompt=prompt,
-                image_edit_optional_request_params=image_edit_request_params,
-                litellm_params=litellm_params,
-                logging_obj=litellm_logging_obj,
-                timeout=timeout or DEFAULT_REQUEST_TIMEOUT,
-                extra_headers=extra_headers,
-                client=kwargs.get("client"),
-                aimage_edit=_is_async,
-            )
-        elif custom_llm_provider == "fal_ai":
-            # Route to Fal AI queue handler (submit → poll → fetch)
-            if model is None:
-                raise Exception("Model needs to be set for fal_ai")
-            image_edit_request_params.update(non_default_params)
-            return fal_ai_image_edit.image_edit(
                 model=model,
                 image=images,
                 prompt=prompt,

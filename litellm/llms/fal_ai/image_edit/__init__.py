@@ -1,14 +1,8 @@
 from litellm.llms.base_llm.image_edit.transformation import BaseImageEditConfig
 
-from .handler import FalAIImageEdit, fal_ai_image_edit
 from .transformation import FalAIGptImage2EditConfig
 
-__all__ = [
-    "FalAIGptImage2EditConfig",
-    "FalAIImageEdit",
-    "fal_ai_image_edit",
-    "get_fal_ai_image_edit_config",
-]
+__all__ = ["FalAIGptImage2EditConfig", "get_fal_ai_image_edit_config"]
 
 
 def get_fal_ai_image_edit_config(model: str) -> BaseImageEditConfig:
