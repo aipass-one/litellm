@@ -155,12 +155,14 @@ class TestFalAIGptImage2EditTransformation:
 @pytest.mark.parametrize(
     "quality,size,expected_cost",
     [
-        ("high", "1024-x-1024", 0.22),
-        ("medium", "1024-x-1024", 0.06),
-        ("low", "1024-x-1024", 0.01),
-        ("high", "3840-x-2160", 0.41),
-        ("low", "1024-x-768", 0.01),
-        ("medium", "1920-x-1080", 0.04),
+        # Edit pricing = text-to-image matrix + $0.01 (input-image token cost),
+        # see `litellm/model_prices_and_context_window_backup.json`.
+        ("high", "1024-x-1024", 0.23),
+        ("medium", "1024-x-1024", 0.07),
+        ("low", "1024-x-1024", 0.02),
+        ("high", "3840-x-2160", 0.42),
+        ("low", "1024-x-768", 0.02),
+        ("medium", "1920-x-1080", 0.05),
     ],
 )
 def test_fal_ai_gpt_image_2_edit_tiered_cost_lookup(

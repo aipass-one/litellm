@@ -189,9 +189,16 @@ async def test_fal_ai_gpt_image_2_response_stamps_size_and_quality():
         ("medium", "1920-x-1080", 0.04),
     ],
 )
-def test_fal_ai_gpt_image_2_tiered_cost_lookup(quality, size, expected_cost):
+def test_fal_ai_gpt_image_2_tiered_cost_lookup(quality, size, expected_cost, monkeypatch):
     """The {quality}/{size}/{model} composite key resolves to the matching
     pricing entry in model_prices_and_context_window.json."""
+    monkeypatch.setenv("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+    import importlib
+
+    import litellm
+
+    importlib.reload(litellm)
+
     from litellm.litellm_core_utils.llm_cost_calc.utils import (
         CostCalculatorUtils,
     )
