@@ -13287,6 +13287,94 @@
             "/v1/images/edits"
         ]
     },
+    "fal_ai/fal-ai/birefnet/v2": {
+        "litellm_provider": "fal_ai",
+        "mode": "image_edit",
+        "output_cost_per_image": 0.005,
+        "supported_endpoints": [
+            "/v1/images/edits"
+        ]
+    },
+    "fal_ai/fal-ai/ben/v2/image": {
+        "litellm_provider": "fal_ai",
+        "mode": "image_edit",
+        "output_cost_per_image": 0.005,
+        "supported_endpoints": [
+            "/v1/images/edits"
+        ]
+    },
+    "fal_ai/fal-ai/aura-sr": {
+        "input_cost_per_pixel": 1e-8,
+        "litellm_provider": "fal_ai",
+        "mode": "image_edit",
+        "supported_endpoints": [
+            "/v1/images/edits"
+        ]
+    },
+    "fal_ai/fal-ai/esrgan": {
+        "litellm_provider": "fal_ai",
+        "mode": "image_edit",
+        "output_cost_per_image": 0.001,
+        "supported_endpoints": [
+            "/v1/images/edits"
+        ]
+    },
+    "fal_ai/fal-ai/topaz/upscale/image": {
+        "litellm_provider": "fal_ai",
+        "mode": "image_edit",
+        "output_cost_per_image": 0.05,
+        "supported_endpoints": [
+            "/v1/images/edits"
+        ]
+    },
+    "fal_ai/fal-ai/recraft/upscale/crisp": {
+        "litellm_provider": "fal_ai",
+        "mode": "image_edit",
+        "output_cost_per_image": 0.04,
+        "supported_endpoints": [
+            "/v1/images/edits"
+        ]
+    },
+    "fal_ai/fal-ai/recraft/upscale/creative": {
+        "litellm_provider": "fal_ai",
+        "mode": "image_edit",
+        "output_cost_per_image": 0.04,
+        "supported_endpoints": [
+            "/v1/images/edits"
+        ]
+    },
+    "fal_ai/fal-ai/nano-banana-pro": {
+        "litellm_provider": "fal_ai",
+        "mode": "image_generation",
+        "output_cost_per_image": 0.04,
+        "supported_endpoints": [
+            "/v1/images/generations"
+        ]
+    },
+    "fal_ai/fal-ai/nano-banana-pro/edit": {
+        "litellm_provider": "fal_ai",
+        "mode": "image_edit",
+        "output_cost_per_image": 0.04,
+        "supported_endpoints": [
+            "/v1/images/edits"
+        ]
+    },
+    "fal_ai/fal-ai/nano-banana-2": {
+        "litellm_provider": "fal_ai",
+        "mode": "image_generation",
+        "output_cost_per_image": 0.04,
+        "supported_endpoints": [
+            "/v1/images/generations"
+        ]
+    },
+    "fal_ai/fal-ai/nano-banana-2/edit": {
+        "litellm_provider": "fal_ai",
+        "mode": "image_edit",
+        "output_cost_per_image": 0.04,
+        "supported_endpoints": [
+            "/v1/images/edits"
+        ]
+    },
     "fal_ai/openai/gpt-image-2": {
         "input_cost_per_image": 0.06,
         "litellm_provider": "fal_ai",
