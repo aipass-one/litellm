@@ -11,15 +11,16 @@ def cost_calculator(
     """
     fal.ai image generation cost calculator.
 
-    Most Fal models are flat-priced per image. Two tiered models are
-    resolved through the shared ``default_image_cost_calculator``
-    composite-key lookup (``cost_calculator.py:1938``):
-    - ``openai/gpt-image-2`` is tiered by quality + size; the transformation
-      stamps quality and size in ``transform_image_generation_response``.
-    - ``fal-ai/clarity-upscaler`` uses pixel-based pricing (Fal bills
-      $0.03/MP output) via the ``input_cost_per_pixel`` path; the
-      transformation stamps ``image_response.size`` from the output
-      dimensions so width × height × per_pixel returns the correct cost.
+    Most Fal models are flat-priced per image. Two exceptions are
+    resolved via the shared ``default_image_cost_calculator``:
+
+    - ``openai/gpt-image-2`` is tiered by quality + size; quality and
+      size are stamped on the response by the transformation and feed
+      the composite-key lookup.
+    - ``fal-ai/clarity-upscaler`` uses pixel-based pricing
+      (Fal bills $0.03/MP output); the transformation stamps
+      ``image_response.size`` from the output dimensions, then
+      ``input_cost_per_pixel`` × width × height returns the cost.
     """
     if "gpt-image-2" in model.lower():
         from litellm.cost_calculator import default_image_cost_calculator

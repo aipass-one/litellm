@@ -17,7 +17,7 @@ def get_fal_ai_image_edit_config(model: str) -> BaseImageEditConfig:
     Resolve the right Fal AI image-edit config for the given model.
 
     Currently wired up:
-    - ``openai/gpt-image-2`` (and ``/edit`` variant) — OpenAI gpt-image-2 via Fal
+    - ``openai/gpt-image-2[/edit]`` — token-based partner endpoint
     - ``fal-ai/clarity-upscaler`` — pixel-based upscaler
     - ``fal-ai/birefnet`` — flat-priced background removal
     """
