@@ -3,19 +3,21 @@ from litellm.llms.base_llm.image_generation.transformation import (
 )
 
 from .bria_transformation import FalAIBriaConfig
+from .bytedance_transformation import (
+    FalAIBytedanceDreaminaV31Config,
+    FalAIBytedanceSeedreamV3Config,
+)
 from .flux_pro_v11_transformation import FalAIFluxProV11Config
 from .flux_pro_v11_ultra_transformation import FalAIFluxProV11UltraConfig
 from .flux_schnell_transformation import FalAIFluxSchnellConfig
 from .gpt_image2_transformation import FalAIGptImage2Config
-from .imagen4_transformation import FalAIImagen4Config
-from .recraft_v3_transformation import FalAIRecraftV3Config
 from .ideogram_v3_transformation import FalAIIdeogramV3Config
+from .imagen4_transformation import FalAIImagen4Config
+from .nano_banana_2_transformation import FalAINanoBanana2Config
+from .nano_banana_pro_transformation import FalAINanoBananaProConfig
+from .recraft_v3_transformation import FalAIRecraftV3Config
 from .stable_diffusion_transformation import FalAIStableDiffusionConfig
 from .transformation import FalAIBaseConfig, FalAIImageGenerationConfig
-from .bytedance_transformation import (
-    FalAIBytedanceSeedreamV3Config,
-    FalAIBytedanceDreaminaV31Config,
-)
 
 __all__ = [
     "FalAIBaseConfig",
@@ -31,6 +33,8 @@ __all__ = [
     "FalAIBytedanceSeedreamV3Config",
     "FalAIBytedanceDreaminaV31Config",
     "FalAIIdeogramV3Config",
+    "FalAINanoBananaProConfig",
+    "FalAINanoBanana2Config",
 ]
 
 
@@ -46,7 +50,11 @@ def get_fal_ai_image_generation_config(model: str) -> BaseImageGenerationConfig:
     """
     model_lower = model.lower()
 
-    # Map model names to their corresponding configuration classes
+    # Most-specific-first to avoid substring collisions.
+    if "nano-banana-pro" in model_lower:
+        return FalAINanoBananaProConfig()
+    if "nano-banana-2" in model_lower:
+        return FalAINanoBanana2Config()
     if "gpt-image-2" in model_lower:
         return FalAIGptImage2Config()
     if "imagen4" in model_lower or "imagen-4" in model_lower:
