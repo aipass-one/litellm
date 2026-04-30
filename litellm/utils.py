@@ -9075,6 +9075,10 @@ class ProviderConfigManager:
             from litellm.llms.gemini.image_edit import get_gemini_image_edit_config
 
             return get_gemini_image_edit_config(model)
+        elif LlmProviders.FAL_AI == provider:
+            from litellm.llms.fal_ai.image_edit import get_fal_ai_image_edit_config
+
+            return get_fal_ai_image_edit_config(model)
         elif LlmProviders.LITELLM_PROXY == provider:
             from litellm.llms.litellm_proxy.image_edit.transformation import (
                 LiteLLMProxyImageEditConfig,
