@@ -174,8 +174,8 @@ def litellm_with_local_costs(monkeypatch_module=None):
         ("fal_ai/fal-ai/recraft/upscale/creative", 0.04),
         ("fal_ai/fal-ai/birefnet/v2", 0.005),
         ("fal_ai/fal-ai/ben/v2/image", 0.005),
-        ("fal_ai/fal-ai/nano-banana-pro/edit", 0.04),
-        ("fal_ai/fal-ai/nano-banana-2/edit", 0.04),
+        ("fal_ai/fal-ai/nano-banana-pro/edit", 0.15),
+        ("fal_ai/fal-ai/nano-banana-2/edit", 0.08),
     ],
 )
 def test_flat_per_image_cost(litellm_with_local_costs, model, expected_cost):
