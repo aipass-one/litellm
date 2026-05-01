@@ -38,9 +38,15 @@ def cost_calculator(
             size=image_response.size,
         )
 
-    if "clarity-upscaler" in model.lower() or "aura-sr" in model.lower():
-        # Both clarity-upscaler (creative) and aura-sr (faithful) bill by
-        # output megapixels. The transformation stamps ``image_response.size``
+    model_lower = model.lower()
+    if (
+        "clarity-upscaler" in model_lower
+        or "aura-sr" in model_lower
+        or "ben/v2" in model_lower
+    ):
+        # Per-output-pixel pricing: clarity-upscaler ($0.03/MP), aura-sr
+        # (~$0.001/sec compute approximated as 1e-9/pixel), ben/v2
+        # ($0.025/MP). Each transformation stamps ``image_response.size``
         # from the response width/height; ``default_image_cost_calculator``
         # multiplies ``input_cost_per_pixel × width × height``.
         from litellm.cost_calculator import default_image_cost_calculator
