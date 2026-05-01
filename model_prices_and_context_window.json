@@ -13346,7 +13346,7 @@
     "fal_ai/fal-ai/nano-banana-pro": {
         "litellm_provider": "fal_ai",
         "mode": "image_generation",
-        "output_cost_per_image": 0.04,
+        "output_cost_per_image": 0.15,
         "supported_endpoints": [
             "/v1/images/generations"
         ]
@@ -13354,7 +13354,7 @@
     "fal_ai/fal-ai/nano-banana-pro/edit": {
         "litellm_provider": "fal_ai",
         "mode": "image_edit",
-        "output_cost_per_image": 0.04,
+        "output_cost_per_image": 0.15,
         "supported_endpoints": [
             "/v1/images/edits"
         ]
@@ -13362,7 +13362,7 @@
     "fal_ai/fal-ai/nano-banana-2": {
         "litellm_provider": "fal_ai",
         "mode": "image_generation",
-        "output_cost_per_image": 0.04,
+        "output_cost_per_image": 0.08,
         "supported_endpoints": [
             "/v1/images/generations"
         ]
@@ -13370,7 +13370,7 @@
     "fal_ai/fal-ai/nano-banana-2/edit": {
         "litellm_provider": "fal_ai",
         "mode": "image_edit",
-        "output_cost_per_image": 0.04,
+        "output_cost_per_image": 0.08,
         "supported_endpoints": [
             "/v1/images/edits"
         ]
