@@ -110,8 +110,8 @@ def test_response_parses_images_list(config_class):
 @pytest.mark.parametrize(
     "model,expected_cost",
     [
-        ("fal_ai/fal-ai/nano-banana-pro", 0.04),
-        ("fal_ai/fal-ai/nano-banana-2", 0.04),
+        ("fal_ai/fal-ai/nano-banana-pro", 0.15),
+        ("fal_ai/fal-ai/nano-banana-2", 0.08),
     ],
 )
 def test_flat_per_image_cost(monkeypatch, model, expected_cost):
