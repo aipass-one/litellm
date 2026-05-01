@@ -168,12 +168,11 @@ def litellm_with_local_costs(monkeypatch_module=None):
 @pytest.mark.parametrize(
     "model,expected_cost",
     [
-        ("fal_ai/fal-ai/esrgan", 0.001),
-        ("fal_ai/fal-ai/topaz/upscale/image", 0.05),
-        ("fal_ai/fal-ai/recraft/upscale/crisp", 0.04),
-        ("fal_ai/fal-ai/recraft/upscale/creative", 0.04),
-        ("fal_ai/fal-ai/birefnet/v2", 0.005),
-        ("fal_ai/fal-ai/ben/v2/image", 0.005),
+        ("fal_ai/fal-ai/esrgan", 0.006),
+        ("fal_ai/fal-ai/topaz/upscale/image", 0.08),
+        ("fal_ai/fal-ai/recraft/upscale/crisp", 0.004),
+        ("fal_ai/fal-ai/recraft/upscale/creative", 0.25),
+        ("fal_ai/fal-ai/birefnet/v2", 0.006),
         ("fal_ai/fal-ai/nano-banana-pro/edit", 0.15),
         ("fal_ai/fal-ai/nano-banana-2/edit", 0.08),
     ],
@@ -200,30 +199,37 @@ def test_flat_per_image_cost(litellm_with_local_costs, model, expected_cost):
 
 
 @pytest.mark.parametrize(
-    "size,expected_cost",
+    "model,size,rate_per_pixel",
     [
-        # input_cost_per_pixel = 1e-8, so 4MP = $0.04, 16MP = $0.16
-        ("1024-x-1024", 1024 * 1024 * 1e-8),
-        ("2048-x-2048", 2048 * 2048 * 1e-8),
-        ("4096-x-4096", 4096 * 4096 * 1e-8),
+        # aura-sr: 1e-9/pixel (~$0.001/sec compute approximated)
+        ("fal_ai/fal-ai/aura-sr", "1024-x-1024", 1e-9),
+        ("fal_ai/fal-ai/aura-sr", "4096-x-4096", 1e-9),
+        # ben/v2: 2.5e-8/pixel = $0.025/MP per Fal docs
+        ("fal_ai/fal-ai/ben/v2/image", "1024-x-1024", 2.5e-8),
+        ("fal_ai/fal-ai/ben/v2/image", "2048-x-2048", 2.5e-8),
     ],
 )
-def test_aura_sr_pixel_cost_lookup(litellm_with_local_costs, size, expected_cost):
-    """aura-sr uses input_cost_per_pixel — width × height × rate."""
+def test_per_pixel_cost_lookup(
+    litellm_with_local_costs, model, size, rate_per_pixel
+):
+    """Per-megapixel-priced models multiply width × height × rate."""
     from litellm.litellm_core_utils.llm_cost_calc.utils import CostCalculatorUtils
     from litellm.types.utils import ImageObject, ImageResponse
 
     response = ImageResponse(
         data=[ImageObject(url="https://example.com/img.png", b64_json=None)],
     )
-    response.size = size  # the transformation stamps this for per-pixel pricing
+    response.size = size  # transformation stamps this
+
+    width, height = (int(p) for p in size.split("-x-"))
+    expected = width * height * rate_per_pixel
 
     cost = CostCalculatorUtils.route_image_generation_cost_calculator(
-        model="fal_ai/fal-ai/aura-sr",
+        model=model,
         completion_response=response,
         custom_llm_provider="fal_ai",
         quality=None,
         size=size,
         n=1,
     )
-    assert abs(cost - expected_cost) < 1e-9
+    assert abs(cost - expected) < 1e-9, f"{model}@{size}: expected ${expected}, got ${cost}"

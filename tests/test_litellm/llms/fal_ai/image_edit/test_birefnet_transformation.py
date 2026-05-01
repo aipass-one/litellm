@@ -163,5 +163,5 @@ def test_fal_ai_birefnet_flat_cost_lookup(monkeypatch):
         size=None,
         n=1,
     )
-    # JSON entry: output_cost_per_image = 0.005
-    assert abs(cost - 0.005) < 1e-9, f"expected $0.005, got ${cost}"
+    # JSON entry: output_cost_per_image = 0.004 (~$0.00111/sec × ~3s avg)
+    assert abs(cost - 0.004) < 1e-9, f"expected $0.004, got ${cost}"
