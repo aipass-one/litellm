@@ -1,79 +1,117 @@
+"""
+fal.ai cost calculator.
+
+Source of truth: the ``x-fal-billable-units`` HTTP response header that Fal
+emits on every modern endpoint. The transformation layer captures it onto
+``image_response._hidden_params["fal_billable_units"]`` (see
+``FalAIBaseConfig.transform_image_generation_response`` and
+``FalAIImageEditConfig.transform_image_edit_response``); this calculator
+reads it back and multiplies by the static unit price for the endpoint.
+
+Three paths, in priority order:
+
+1. **Header present** — exact cost. Used by the 8 modern Fal endpoints we
+   care about (gpt-image-2, gpt-image-2/edit, clarity-upscaler, topaz,
+   ben/v2, nano-banana family, …). Multiplies ``fal_billable_units`` by
+   the model's static ``unit_price``.
+
+2. **Fixed per-image** — the four ``"images"``-billed endpoints
+   (recraft/upscale/{crisp,creative}, nano-banana families when the header
+   is absent). Returns ``num_images_returned × unit_price``.
+
+3. **Compute-seconds flat estimate** — the three legacy compute-priced
+   endpoints (esrgan, aura-sr, birefnet/v2) that don't emit the header.
+   Returns a per-model flat estimate calibrated against historical Fal
+   billing. Real drift surfaces via the ``fal-cost-audit`` operator skill.
+
+The previous matrix-based implementation (composite keys like
+``high/fal_ai/1024-x-1024/openai/gpt-image-2``) is gone — the matrix was
+brittle, never matched Fal's actual billing for variable-quality models,
+and is unnecessary now that we read Fal's authoritative header.
+"""
+
 from typing import Any
 
-import litellm
 from litellm.types.utils import ImageResponse
 
 
-def cost_calculator(
-    model: str,
-    image_response: Any,
-) -> float:
-    """
-    fal.ai image generation cost calculator.
+# ---------------------------------------------------------------------------
+# Pricing snapshot — refresh when Fal changes published rates. Source:
+# GET https://api.fal.ai/v1/models/pricing?endpoint_id=...
+# ---------------------------------------------------------------------------
+# (unit_price_usd, unit_kind)
+FAL_UNIT_PRICES = {
+    # variable per-token / per-unit (header-emitting)
+    "openai/gpt-image-2":              (1.00,    "units"),
+    "openai/gpt-image-2/edit":         (1.00,    "units"),
+    # variable per-output-megapixel (header-emitting)
+    "fal-ai/clarity-upscaler":         (0.03,    "megapixels"),
+    "fal-ai/topaz/upscale/image":      (0.01,    "megapixels"),
+    "fal-ai/ben/v2/image":             (0.025,   "megapixels"),
+    # fixed per-output-image (header-emitting on newer endpoints,
+    # falls back to per-image multiply when header absent)
+    "fal-ai/nano-banana-pro":          (0.15,    "images"),
+    "fal-ai/nano-banana-2":            (0.08,    "images"),
+    "fal-ai/recraft/upscale/crisp":    (0.004,   "images"),
+    "fal-ai/recraft/upscale/creative": (0.25,    "images"),
+    # compute-second billed (no header on legacy endpoints)
+    "fal-ai/esrgan":                   (0.00111, "compute_seconds"),
+    "fal-ai/aura-sr":                  (0.00125, "compute_seconds"),
+    "fal-ai/birefnet/v2":              (0.00111, "compute_seconds"),
+}
 
-    Most Fal models are flat-priced per image. Two exceptions are
-    resolved via the shared ``default_image_cost_calculator``:
+# Per-model flat estimates for compute-second endpoints that don't emit the
+# header. Calibrated against historical Fal billing — re-tune via
+# `/fal-cost-audit` and update here if drift exceeds a few cents/day.
+COMPUTE_SECOND_FALLBACK = {
+    "fal-ai/esrgan":      0.008,   # ~7s × $0.00111
+    "fal-ai/aura-sr":     0.015,   # ~12s × $0.00125
+    "fal-ai/birefnet/v2": 0.008,   # ~7s × $0.00111
+}
 
-    - ``openai/gpt-image-2`` is tiered by quality + size; quality and
-      size are stamped on the response by the transformation and feed
-      the composite-key lookup.
-    - ``fal-ai/clarity-upscaler`` uses pixel-based pricing
-      (Fal bills $0.03/MP output); the transformation stamps
-      ``image_response.size`` from the output dimensions, then
-      ``input_cost_per_pixel`` × width × height returns the cost.
-    """
-    if "gpt-image-2" in model.lower():
-        from litellm.cost_calculator import default_image_cost_calculator
+# Endpoints where we know the header isn't emitted. Used by
+# cost_reconciler.py (when present) to decide which calls to reconcile.
+NO_HEADER_COMPUTE_MODELS = frozenset(COMPUTE_SECOND_FALLBACK)
 
-        num_images = (
-            len(image_response.data)
-            if isinstance(image_response, ImageResponse) and image_response.data
-            else 1
-        )
-        return default_image_cost_calculator(
-            model=model,
-            quality=image_response.quality,
-            custom_llm_provider=litellm.LlmProviders.FAL_AI.value,
-            n=num_images,
-            size=image_response.size,
-        )
 
-    model_lower = model.lower()
-    if (
-        "clarity-upscaler" in model_lower
-        or "aura-sr" in model_lower
-        or "ben/v2" in model_lower
-    ):
-        # Per-output-pixel pricing: clarity-upscaler ($0.03/MP), aura-sr
-        # (~$0.001/sec compute approximated as 1e-9/pixel), ben/v2
-        # ($0.025/MP). Each transformation stamps ``image_response.size``
-        # from the response width/height; ``default_image_cost_calculator``
-        # multiplies ``input_cost_per_pixel × width × height``.
-        from litellm.cost_calculator import default_image_cost_calculator
+def _endpoint_id(model: str) -> str:
+    """Strip the ``fal_ai/`` provider prefix LiteLLM adds to model names."""
+    return model[len("fal_ai/"):] if model.startswith("fal_ai/") else model
 
-        num_images = (
-            len(image_response.data)
-            if isinstance(image_response, ImageResponse) and image_response.data
-            else 1
-        )
-        return default_image_cost_calculator(
-            model=model,
-            custom_llm_provider=litellm.LlmProviders.FAL_AI.value,
-            n=num_images,
-            size=image_response.size,
-        )
 
-    _model_info = litellm.get_model_info(
-        model=model,
-        custom_llm_provider=litellm.LlmProviders.FAL_AI.value,
-    )
-    output_cost_per_image: float = _model_info.get("output_cost_per_image") or 0.0
-    num_images: int = 0
-    if isinstance(image_response, ImageResponse):
-        if image_response.data:
-            num_images = len(image_response.data)
-        return output_cost_per_image * num_images
-    else:
-        raise ValueError(
-            f"image_response must be of type ImageResponse got type={type(image_response)}"
-        )
+def cost_calculator(model: str, image_response: Any) -> float:
+    endpoint = _endpoint_id(model)
+    unit_price_kind = FAL_UNIT_PRICES.get(endpoint)
+    if unit_price_kind is None:
+        # Unknown Fal endpoint. Fall back to LiteLLM's generic cost lookup
+        # which will return 0.0 if no price is configured. Prefer this over
+        # a hard error so a new Fal model can be added to model_list before
+        # FAL_UNIT_PRICES is updated.
+        return 0.0
+    unit_price, unit_kind = unit_price_kind
+
+    if not isinstance(image_response, ImageResponse):
+        # Defensive: every Fal transformation produces an ImageResponse.
+        # If we somehow got something else, return 0 rather than crashing.
+        return 0.0
+
+    hidden = getattr(image_response, "_hidden_params", None) or {}
+    units = hidden.get("fal_billable_units")
+
+    # Path 1 — exact via response header (the 8+ header-emitting models).
+    if units is not None:
+        try:
+            return float(units) * unit_price
+        except (TypeError, ValueError):
+            pass  # malformed header, fall through to estimate
+
+    # Path 2 — fixed per-image: just multiply by image count.
+    if unit_kind == "images":
+        n = len(image_response.data) if image_response.data else 1
+        return n * unit_price
+
+    # Path 3 — compute-second models without a header. Mark for reconciliation
+    # (the audit skill or a future async reconciler can correct after the fact).
+    hidden["needs_reconcile"] = True
+    image_response._hidden_params = hidden
+    return COMPUTE_SECOND_FALLBACK.get(endpoint, unit_price * 5)

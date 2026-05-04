@@ -202,10 +202,23 @@ class FalAIImageEditConfig(BaseImageEditConfig):
         model_response.data = cast(List[OpenAIImage], data_list)
 
         if self.STAMP_OUTPUT_SIZE and first_width and first_height:
-            # Per-pixel-priced models read ``model_response.size`` in
-            # ``default_image_cost_calculator`` and multiply
-            # width × height × input_cost_per_pixel.
+            # Per-pixel-priced models historically read ``model_response.size``
+            # in the matrix-based cost calculator. Kept stamping the size for
+            # backward compatibility / debugging visibility, but the new
+            # cost path prefers the ``x-fal-billable-units`` response header
+            # below; this is only a fallback path.
             model_response.size = f"{first_width}-x-{first_height}"
+
+        # Capture Fal's authoritative billing quantity (header-emitting
+        # endpoints). Multiplied by the static unit_price in cost_calculator.
+        units_header = raw_response.headers.get("x-fal-billable-units")
+        if units_header is not None:
+            try:
+                hidden = model_response._hidden_params or {}
+                hidden["fal_billable_units"] = float(units_header)
+                model_response._hidden_params = hidden
+            except (TypeError, ValueError):
+                pass
 
         return model_response
 
