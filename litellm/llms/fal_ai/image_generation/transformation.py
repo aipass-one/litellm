@@ -116,6 +116,20 @@ class FalAIBaseConfig(BaseImageGenerationConfig):
                         )
                     )
 
+        # Capture Fal's authoritative billing quantity. Fal sets the
+        # ``x-fal-billable-units`` header on every modern endpoint —
+        # cost_calculator multiplies it by the static unit price for the
+        # model. Older endpoints (esrgan/aura-sr/birefnet/v2) don't emit
+        # the header and fall through to a per-model flat estimate.
+        units_header = raw_response.headers.get("x-fal-billable-units")
+        if units_header is not None:
+            try:
+                hidden = model_response._hidden_params or {}
+                hidden["fal_billable_units"] = float(units_header)
+                model_response._hidden_params = hidden
+            except (TypeError, ValueError):
+                pass
+
         return model_response
 
 

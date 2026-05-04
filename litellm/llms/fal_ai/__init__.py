@@ -1,4 +1,9 @@
-from .cost_calculator import cost_calculator
+from .cost_calculator import (
+    COMPUTE_SECOND_FALLBACK,
+    FAL_UNIT_PRICES,
+    NO_HEADER_COMPUTE_MODELS,
+    cost_calculator,
+)
 from .image_generation import (
     FalAIBaseConfig,
     FalAIBriaConfig,
@@ -14,6 +19,9 @@ from .image_generation import (
 
 __all__ = [
     "cost_calculator",
+    "FAL_UNIT_PRICES",
+    "COMPUTE_SECOND_FALLBACK",
+    "NO_HEADER_COMPUTE_MODELS",
     "FalAIBaseConfig",
     "FalAIImageGenerationConfig",
     "FalAIImagen4Config",
