@@ -183,6 +183,20 @@ class FalAIGptImage2Config(FalAIBaseConfig):
 
         model_response.quality = request_data.get("quality", "high")
 
+        # Capture Fal's authoritative billing quantity. Mirrors the logic in
+        # FalAIBaseConfig.transform_image_generation_response — kept here too
+        # because this class fully overrides that method instead of calling
+        # super(). cost_calculator multiplies the units by the static
+        # unit_price for gpt-image-2 ($1/unit).
+        units_header = raw_response.headers.get("x-fal-billable-units")
+        if units_header is not None:
+            try:
+                hidden = model_response._hidden_params or {}
+                hidden["fal_billable_units"] = float(units_header)
+                model_response._hidden_params = hidden
+            except (TypeError, ValueError):
+                pass
+
         return model_response
 
     def _dims_from_request(self, image_size: Any) -> tuple:
