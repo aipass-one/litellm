@@ -1,10 +1,12 @@
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional, Union
 
 import httpx
 
+from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.base_llm.image_generation.transformation import (
     BaseImageGenerationConfig,
 )
+from litellm.llms.fal_ai.error_utils import classify_fal_ai_error
 from litellm.secret_managers.main import get_secret_str
 from litellm.types.llms.openai import (
     AllMessageValues,
@@ -68,6 +70,14 @@ class FalAIBaseConfig(BaseImageGenerationConfig):
 
         headers["Authorization"] = f"Key {final_api_key}"
         return headers
+
+    def get_error_class(
+        self,
+        error_message: str,
+        status_code: int,
+        headers: Union[dict, httpx.Headers],
+    ) -> BaseLLMException:
+        return classify_fal_ai_error(error_message, status_code, headers)
 
     def transform_image_generation_response(
         self,
