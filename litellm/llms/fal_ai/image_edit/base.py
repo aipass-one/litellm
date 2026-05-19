@@ -16,7 +16,9 @@ import httpx
 from httpx._types import RequestFiles
 
 from litellm.images.utils import ImageEditRequestUtils
+from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.base_llm.image_edit.transformation import BaseImageEditConfig
+from litellm.llms.fal_ai.error_utils import classify_fal_ai_error
 from litellm.secret_managers.main import get_secret_str
 from litellm.types.images.main import ImageEditOptionalRequestParams
 from litellm.types.router import GenericLiteLLMParams
@@ -91,6 +93,16 @@ class FalAIImageEditConfig(BaseImageEditConfig):
 
     def use_multipart_form_data(self) -> bool:
         return False
+
+    # --------------------------------------------------------------- errors
+
+    def get_error_class(
+        self,
+        error_message: str,
+        status_code: int,
+        headers: Union[dict, httpx.Headers],
+    ) -> BaseLLMException:
+        return classify_fal_ai_error(error_message, status_code, headers)
 
     def get_complete_url(
         self,
