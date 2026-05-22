@@ -16,6 +16,12 @@ from .image_generation import (
     FalAIStableDiffusionConfig,
     get_fal_ai_image_generation_config,
 )
+from .video_generation import (
+    FalAIBaseVideoConfig,
+    SeedanceV2Config,
+    SeedanceV2FastConfig,
+    get_fal_ai_video_generation_config,
+)
 
 __all__ = [
     "cost_calculator",
@@ -32,4 +38,8 @@ __all__ = [
     "FalAIFluxSchnellConfig",
     "FalAIStableDiffusionConfig",
     "get_fal_ai_image_generation_config",
+    "FalAIBaseVideoConfig",
+    "SeedanceV2Config",
+    "SeedanceV2FastConfig",
+    "get_fal_ai_video_generation_config",
 ]

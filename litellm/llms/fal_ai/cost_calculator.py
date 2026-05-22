@@ -4,16 +4,17 @@ fal.ai cost calculator.
 Source of truth: the ``x-fal-billable-units`` HTTP response header that Fal
 emits on every modern endpoint. The transformation layer captures it onto
 ``image_response._hidden_params["fal_billable_units"]`` (see
-``FalAIBaseConfig.transform_image_generation_response`` and
-``FalAIImageEditConfig.transform_image_edit_response``); this calculator
-reads it back and multiplies by the static unit price for the endpoint.
+``FalAIBaseConfig.transform_image_generation_response``,
+``FalAIImageEditConfig.transform_image_edit_response``, and
+``FalAIBaseVideoConfig._capture_billable_units``); this calculator reads it
+back and multiplies by the static unit price for the endpoint.
 
 Three paths, in priority order:
 
-1. **Header present** — exact cost. Used by the 8 modern Fal endpoints we
+1. **Header present** — exact cost. Used by the 8+ modern Fal endpoints we
    care about (gpt-image-2, gpt-image-2/edit, clarity-upscaler, topaz,
-   ben/v2, nano-banana family, …). Multiplies ``fal_billable_units`` by
-   the model's static ``unit_price``.
+   ben/v2, nano-banana family, seedance, …). Multiplies
+   ``fal_billable_units`` by the model's static ``unit_price``.
 
 2. **Fixed per-image** — the four ``"images"``-billed endpoints
    (recraft/upscale/{crisp,creative}, nano-banana families when the header
@@ -33,6 +34,7 @@ and is unnecessary now that we read Fal's authoritative header.
 from typing import Any
 
 from litellm.types.utils import ImageResponse
+from litellm.types.videos.main import VideoObject
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +60,9 @@ FAL_UNIT_PRICES = {
     "fal-ai/esrgan":                   (0.00111, "compute_seconds"),
     "fal-ai/aura-sr":                  (0.00125, "compute_seconds"),
     "fal-ai/birefnet/v2":              (0.00111, "compute_seconds"),
+    # video — billed per output second (header-emitting via PR #22 pattern)
+    "bytedance/seedance-2.0/image-to-video":      (0.3024, "seconds"),
+    "bytedance/seedance-2.0/fast/image-to-video": (0.2419, "seconds"),
 }
 
 # Per-model flat estimates for compute-second endpoints that don't emit the
@@ -90,15 +95,18 @@ def cost_calculator(model: str, image_response: Any) -> float:
         return 0.0
     unit_price, unit_kind = unit_price_kind
 
-    if not isinstance(image_response, ImageResponse):
-        # Defensive: every Fal transformation produces an ImageResponse.
-        # If we somehow got something else, return 0 rather than crashing.
+    # Both ImageResponse (image gen / edit) and VideoObject (video) carry the
+    # ``_hidden_params["fal_billable_units"]`` value captured from the
+    # response header. Anything else is unexpected — return 0 defensively
+    # rather than crashing the request.
+    if not isinstance(image_response, (ImageResponse, VideoObject)):
         return 0.0
 
     hidden = getattr(image_response, "_hidden_params", None) or {}
     units = hidden.get("fal_billable_units")
 
-    # Path 1 — exact via response header (the 8+ header-emitting models).
+    # Path 1 — exact via response header (the 8+ header-emitting models,
+    # including seedance video models which bill per output second).
     if units is not None:
         try:
             return float(units) * unit_price
@@ -107,11 +115,14 @@ def cost_calculator(model: str, image_response: Any) -> float:
 
     # Path 2 — fixed per-image: just multiply by image count.
     if unit_kind == "images":
-        n = len(image_response.data) if image_response.data else 1
+        data = getattr(image_response, "data", None)
+        n = len(data) if data else 1
         return n * unit_price
 
-    # Path 3 — compute-second models without a header. Mark for reconciliation
-    # (the audit skill or a future async reconciler can correct after the fact).
+    # Path 3 — endpoints without a usable header. Mark for reconciliation
+    # (the audit skill or a future async reconciler can correct after the
+    # fact). For per-second video the default fallback assumes ~5 output
+    # seconds; the audit catches drift the next day.
     hidden["needs_reconcile"] = True
     image_response._hidden_params = hidden
     return COMPUTE_SECOND_FALLBACK.get(endpoint, unit_price * 5)
