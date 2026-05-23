@@ -233,6 +233,27 @@ class TestStatusRetrieve:
         assert url == "https://queue.fal.run/stub/test-video-model/requests/abc-123/status"
         assert params == {}
 
+    def test_status_url_handles_full_create_url_as_api_base(self):
+        # Regression: LiteLLM's video handler echoes the full create URL
+        # back as api_base for status/content requests. We must strip the
+        # path to scheme+host or the endpoint gets doubled and Fal returns
+        # 405 with empty body, which then crashes raw_response.json().
+        from litellm.types.videos.utils import encode_video_id_with_provider
+
+        encoded_id = encode_video_id_with_provider(
+            "abc-123", "fal_ai", "fal_ai/stub/test-video-model"
+        )
+        url, _ = self.config.transform_video_status_retrieve_request(
+            video_id=encoded_id,
+            api_base="https://queue.fal.run/stub/test-video-model",
+            litellm_params=MagicMock(),
+            headers={},
+        )
+        assert url == (
+            "https://queue.fal.run/stub/test-video-model/requests/abc-123/status"
+        )
+        assert "stub/test-video-model/stub/test-video-model" not in url
+
     def test_status_response_progress_from_queue_position(self):
         raw = _build_response(
             {"request_id": "abc", "status": "IN_QUEUE", "queue_position": 3}
@@ -265,6 +286,22 @@ class TestContentRequest:
         )
         assert url == "https://queue.fal.run/stub/test-video-model/requests/abc-123"
         assert params == {}
+
+    def test_content_url_handles_full_create_url_as_api_base(self):
+        # Same regression as status: api_base may carry the create URL.
+        from litellm.types.videos.utils import encode_video_id_with_provider
+
+        encoded_id = encode_video_id_with_provider(
+            "abc-123", "fal_ai", "fal_ai/stub/test-video-model"
+        )
+        url, _ = self.config.transform_video_content_request(
+            video_id=encoded_id,
+            api_base="https://queue.fal.run/stub/test-video-model",
+            litellm_params=MagicMock(),
+            headers={},
+        )
+        assert url == "https://queue.fal.run/stub/test-video-model/requests/abc-123"
+        assert "stub/test-video-model/stub/test-video-model" not in url
 
     def test_extract_video_url(self):
         url = self.config._extract_video_url(
