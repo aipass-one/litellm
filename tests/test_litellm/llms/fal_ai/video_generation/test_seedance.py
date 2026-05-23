@@ -87,6 +87,66 @@ def test_fast_get_complete_url():
     )
 
 
+# ----------------------------------------------------- queue URL pattern
+
+
+def test_seedance_status_url_drops_variant_subroute():
+    """
+    Regression for the production bug: live e2e against seedance/fast
+    returned 500 on status polls because Fal's queue API exposes
+    status/result/cancel URLs under the 2-segment base
+    ``bytedance/seedance-2.0`` — the submit-only sub-route
+    ``/fast/image-to-video`` must be stripped, or Fal's router collapses
+    back to the POST-only submit endpoint and returns 405 + empty body.
+
+    Captured ``status_url`` from Fal in a real submit response:
+        https://queue.fal.run/bytedance/seedance-2.0/requests/{id}/status
+    """
+    from litellm.types.videos.utils import encode_video_id_with_provider
+
+    config = SeedanceV2FastConfig()
+    encoded_id = encode_video_id_with_provider(
+        "abc-123", "fal_ai", "fal_ai/bytedance/seedance-2.0/fast/image-to-video"
+    )
+    status_url, _ = config.transform_video_status_retrieve_request(
+        video_id=encoded_id,
+        api_base="https://queue.fal.run/bytedance/seedance-2.0/fast/image-to-video",
+        litellm_params=MagicMock(),
+        headers={},
+    )
+    assert status_url == (
+        "https://queue.fal.run/bytedance/seedance-2.0/requests/abc-123/status"
+    )
+
+    content_url, _ = config.transform_video_content_request(
+        video_id=encoded_id,
+        api_base="https://queue.fal.run/bytedance/seedance-2.0/fast/image-to-video",
+        litellm_params=MagicMock(),
+        headers={},
+    )
+    assert content_url == (
+        "https://queue.fal.run/bytedance/seedance-2.0/requests/abc-123"
+    )
+
+
+def test_seedance_standard_status_url_uses_base_too():
+    from litellm.types.videos.utils import encode_video_id_with_provider
+
+    config = SeedanceV2Config()
+    encoded_id = encode_video_id_with_provider(
+        "x-789", "fal_ai", "fal_ai/bytedance/seedance-2.0/image-to-video"
+    )
+    status_url, _ = config.transform_video_status_retrieve_request(
+        video_id=encoded_id,
+        api_base="https://queue.fal.run/bytedance/seedance-2.0/image-to-video",
+        litellm_params=MagicMock(),
+        headers={},
+    )
+    assert status_url == (
+        "https://queue.fal.run/bytedance/seedance-2.0/requests/x-789/status"
+    )
+
+
 # ---------------------------------------------------- size → resolution
 
 

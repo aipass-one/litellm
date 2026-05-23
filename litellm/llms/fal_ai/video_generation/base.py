@@ -374,12 +374,36 @@ class FalAIBaseVideoConfig(BaseVideoConfig):
         ``video_id`` at create-time, so we round-trip it here. Falls back to
         the class-declared ``VIDEO_ENDPOINT`` so concrete subclasses keep
         working even if the encoded model is missing.
+
+        Then collapse to the 2-segment base ``{owner}/{alias}``. Fal's
+        queue API uses just the base app id in status/result/cancel URLs,
+        even when the submit URL carries a variant sub-route — e.g.
+
+            submit: POST queue.fal.run/bytedance/seedance-2.0/fast/image-to-video
+            status: GET  queue.fal.run/bytedance/seedance-2.0/requests/{id}/status
+
+        Using the full submit slug for status returns 405 with an empty
+        body (Fal's router collapses back to the submit endpoint, which
+        only accepts POST). Verified empirically from the ``status_url``
+        Fal returns in the submit response.
         """
         decoded = decode_video_id_with_provider(video_id)
         model = decoded.get("model_id") or ""
-        if model:
-            return _strip_provider_prefix(model)
-        return self.VIDEO_ENDPOINT
+        slug = _strip_provider_prefix(model) if model else self.VIDEO_ENDPOINT
+        return self._base_app_id(slug)
+
+    @staticmethod
+    def _base_app_id(endpoint_slug: str) -> str:
+        """
+        Collapse a Fal endpoint slug to its base ``{owner}/{alias}``.
+
+        Fal's queue API uses the 2-segment base for status/result/cancel
+        URLs; anything beyond that is a submit-only sub-route.
+        """
+        parts = [p for p in endpoint_slug.split("/") if p]
+        if len(parts) >= 2:
+            return "/".join(parts[:2])
+        return endpoint_slug
 
     def _queue_base(self, api_base: Optional[str]) -> str:
         """
