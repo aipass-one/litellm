@@ -382,8 +382,24 @@ class FalAIBaseVideoConfig(BaseVideoConfig):
         return self.VIDEO_ENDPOINT
 
     def _queue_base(self, api_base: Optional[str]) -> str:
+        """
+        Return just the scheme+host of the queue API.
+
+        LiteLLM hands ``api_base`` back to us as the **full** create URL
+        (i.e. what ``get_complete_url`` returned — including the endpoint
+        slug). For status/content URLs we need to prepend a *different*
+        path (``/{endpoint}/requests/{id}[/status]``) onto the queue base,
+        so we must strip any existing path components or we end up with a
+        doubled endpoint like ``…/bytedance/seedance-2.0/…/bytedance/seedance-2.0/…``
+        which Fal's router collapses back to the submit endpoint and
+        rejects as 405 Method Not Allowed.
+        """
         if api_base:
-            return api_base.rstrip("/")
+            from urllib.parse import urlparse
+
+            parsed = urlparse(api_base)
+            if parsed.scheme and parsed.netloc:
+                return f"{parsed.scheme}://{parsed.netloc}"
         return self.DEFAULT_QUEUE_URL
 
     # -------------------------------------------------- unsupported methods
