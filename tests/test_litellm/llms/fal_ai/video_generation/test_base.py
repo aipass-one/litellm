@@ -213,6 +213,36 @@ class TestStatusMapping:
 # --------------------------------------------------------- status retrieve
 
 
+class TestBaseAppId:
+    """Fal queue API uses {owner}/{alias} for status/result URLs, not the
+    full submit path. Collapse to 2-segment base."""
+
+    def setup_method(self):
+        self.config = _StubConfig()
+
+    @pytest.mark.parametrize(
+        "slug,expected",
+        [
+            ("bytedance/seedance-2.0", "bytedance/seedance-2.0"),
+            (
+                "bytedance/seedance-2.0/fast/image-to-video",
+                "bytedance/seedance-2.0",
+            ),
+            (
+                "bytedance/seedance-2.0/image-to-video",
+                "bytedance/seedance-2.0",
+            ),
+            ("fal-ai/clarity-upscaler", "fal-ai/clarity-upscaler"),
+            ("openai/gpt-image-2/edit", "openai/gpt-image-2"),
+            ("bare", "bare"),
+            ("", ""),
+            ("/extra/leading/", "extra/leading"),
+        ],
+    )
+    def test_collapse(self, slug, expected):
+        assert self.config._base_app_id(slug) == expected
+
+
 class TestStatusRetrieve:
     def setup_method(self):
         self.config = _StubConfig()
