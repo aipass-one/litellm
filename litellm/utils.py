@@ -8985,6 +8985,12 @@ class ProviderConfigManager:
             from litellm.llms.runwayml.videos.transformation import RunwayMLVideoConfig
 
             return RunwayMLVideoConfig()
+        elif LlmProviders.FAL_AI == provider:
+            from litellm.llms.fal_ai.video_generation import (
+                get_fal_ai_video_generation_config,
+            )
+
+            return get_fal_ai_video_generation_config(model or "")
         return None
 
     @staticmethod
