@@ -184,6 +184,82 @@ class TestCreateResponse:
         assert "fal_billable_units" not in (obj._hidden_params or {})
 
 
+class TestUsageDurationPopulated:
+    """
+    Regression: LiteLLM's video cost calculator
+    (litellm/cost_calculator.py:_VIDEO_CALL_TYPES branch) reads
+    ``completion_response.usage["duration_seconds"]`` and multiplies by the
+    ``output_cost_per_second`` baked into the model_prices JSON. If usage
+    isn't populated, spend logs come out as $0 for every video call.
+    """
+
+    def setup_method(self):
+        self.config = _StubConfig()
+
+    def test_numeric_duration_passes_through(self):
+        raw = _build_response({"request_id": "x", "status": "IN_QUEUE"})
+        obj = self.config.transform_video_create_response(
+            model="fal_ai/stub/test-video-model",
+            raw_response=raw,
+            logging_obj=MagicMock(),
+            request_data={"duration": 4},
+        )
+        assert obj.usage == {"duration_seconds": 4.0}
+
+    def test_string_duration_passes_through(self):
+        raw = _build_response({"request_id": "x", "status": "IN_QUEUE"})
+        obj = self.config.transform_video_create_response(
+            model="fal_ai/stub/test-video-model",
+            raw_response=raw,
+            logging_obj=MagicMock(),
+            request_data={"duration": "8"},
+        )
+        assert obj.usage == {"duration_seconds": 8.0}
+
+    def test_auto_duration_falls_back_to_max_for_preauth(self):
+        # Fal's "auto" picks a duration server-side; we don't know yet, so
+        # bill the maximum (15s) to avoid under-charging. Daily reconcile
+        # corrects any over-charge.
+        raw = _build_response({"request_id": "x", "status": "IN_QUEUE"})
+        obj = self.config.transform_video_create_response(
+            model="fal_ai/stub/test-video-model",
+            raw_response=raw,
+            logging_obj=MagicMock(),
+            request_data={"duration": "auto"},
+        )
+        assert obj.usage == {"duration_seconds": 15.0}
+
+    def test_missing_duration_falls_back_to_max(self):
+        raw = _build_response({"request_id": "x", "status": "IN_QUEUE"})
+        obj = self.config.transform_video_create_response(
+            model="fal_ai/stub/test-video-model",
+            raw_response=raw,
+            logging_obj=MagicMock(),
+            request_data={},
+        )
+        assert obj.usage == {"duration_seconds": 15.0}
+
+    def test_no_request_data_falls_back_to_max(self):
+        raw = _build_response({"request_id": "x", "status": "IN_QUEUE"})
+        obj = self.config.transform_video_create_response(
+            model="fal_ai/stub/test-video-model",
+            raw_response=raw,
+            logging_obj=MagicMock(),
+            request_data=None,
+        )
+        assert obj.usage == {"duration_seconds": 15.0}
+
+    def test_garbage_duration_falls_back_to_max(self):
+        raw = _build_response({"request_id": "x", "status": "IN_QUEUE"})
+        obj = self.config.transform_video_create_response(
+            model="fal_ai/stub/test-video-model",
+            raw_response=raw,
+            logging_obj=MagicMock(),
+            request_data={"duration": object()},
+        )
+        assert obj.usage == {"duration_seconds": 15.0}
+
+
 # --------------------------------------------------------- status mapping
 
 
@@ -342,6 +418,53 @@ class TestContentRequest:
     def test_extract_video_url_missing_raises(self):
         with pytest.raises(ValueError, match="Video URL not found"):
             self.config._extract_video_url({})
+
+    def test_record_result_billable_units_attaches_to_logging_obj(self):
+        raw = _build_response(
+            {"video": {"url": "https://cdn/x.mp4"}, "seed": 1},
+            headers={
+                "x-fal-billable-units": "39.891",
+                "x-fal-request-id": "req-abc",
+            },
+        )
+        logger = MagicMock()
+        logger.model_call_details = {}
+        self.config._record_result_billable_units(raw, logger)
+        assert (
+            logger.model_call_details["additional_args"]["fal_billable_units"]
+            == 39.891
+        )
+
+    def test_record_result_billable_units_no_op_when_header_missing(self):
+        raw = _build_response({"video": {"url": "https://cdn/x.mp4"}}, headers={})
+        logger = MagicMock()
+        logger.model_call_details = {}
+        self.config._record_result_billable_units(raw, logger)
+        assert "additional_args" not in logger.model_call_details
+
+    def test_record_result_billable_units_handles_garbage_value(self):
+        raw = _build_response(
+            {"video": {"url": "https://cdn/x.mp4"}},
+            headers={"x-fal-billable-units": "not-a-number"},
+        )
+        logger = MagicMock()
+        logger.model_call_details = {}
+        # Must not raise.
+        self.config._record_result_billable_units(raw, logger)
+        assert "additional_args" not in logger.model_call_details
+
+    def test_record_result_billable_units_handles_logger_without_details(self):
+        raw = _build_response(
+            {"video": {"url": "https://cdn/x.mp4"}},
+            headers={"x-fal-billable-units": "5.0"},
+        )
+        # Simulate a logger that doesn't expose model_call_details — must
+        # not raise (the verbose_logger.info call still emits the audit
+        # log line, which is the actual reconciliation channel).
+        class _BareLogger:
+            pass
+
+        self.config._record_result_billable_units(raw, _BareLogger())
 
 
 # ----------------------------------------------------- unsupported methods
