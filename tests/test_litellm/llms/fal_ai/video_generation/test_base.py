@@ -419,6 +419,53 @@ class TestContentRequest:
         with pytest.raises(ValueError, match="Video URL not found"):
             self.config._extract_video_url({})
 
+    def test_record_result_billable_units_attaches_to_logging_obj(self):
+        raw = _build_response(
+            {"video": {"url": "https://cdn/x.mp4"}, "seed": 1},
+            headers={
+                "x-fal-billable-units": "39.891",
+                "x-fal-request-id": "req-abc",
+            },
+        )
+        logger = MagicMock()
+        logger.model_call_details = {}
+        self.config._record_result_billable_units(raw, logger)
+        assert (
+            logger.model_call_details["additional_args"]["fal_billable_units"]
+            == 39.891
+        )
+
+    def test_record_result_billable_units_no_op_when_header_missing(self):
+        raw = _build_response({"video": {"url": "https://cdn/x.mp4"}}, headers={})
+        logger = MagicMock()
+        logger.model_call_details = {}
+        self.config._record_result_billable_units(raw, logger)
+        assert "additional_args" not in logger.model_call_details
+
+    def test_record_result_billable_units_handles_garbage_value(self):
+        raw = _build_response(
+            {"video": {"url": "https://cdn/x.mp4"}},
+            headers={"x-fal-billable-units": "not-a-number"},
+        )
+        logger = MagicMock()
+        logger.model_call_details = {}
+        # Must not raise.
+        self.config._record_result_billable_units(raw, logger)
+        assert "additional_args" not in logger.model_call_details
+
+    def test_record_result_billable_units_handles_logger_without_details(self):
+        raw = _build_response(
+            {"video": {"url": "https://cdn/x.mp4"}},
+            headers={"x-fal-billable-units": "5.0"},
+        )
+        # Simulate a logger that doesn't expose model_call_details — must
+        # not raise (the verbose_logger.info call still emits the audit
+        # log line, which is the actual reconciliation channel).
+        class _BareLogger:
+            pass
+
+        self.config._record_result_billable_units(raw, _BareLogger())
+
 
 # ----------------------------------------------------- unsupported methods
 
