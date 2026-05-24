@@ -184,6 +184,82 @@ class TestCreateResponse:
         assert "fal_billable_units" not in (obj._hidden_params or {})
 
 
+class TestUsageDurationPopulated:
+    """
+    Regression: LiteLLM's video cost calculator
+    (litellm/cost_calculator.py:_VIDEO_CALL_TYPES branch) reads
+    ``completion_response.usage["duration_seconds"]`` and multiplies by the
+    ``output_cost_per_second`` baked into the model_prices JSON. If usage
+    isn't populated, spend logs come out as $0 for every video call.
+    """
+
+    def setup_method(self):
+        self.config = _StubConfig()
+
+    def test_numeric_duration_passes_through(self):
+        raw = _build_response({"request_id": "x", "status": "IN_QUEUE"})
+        obj = self.config.transform_video_create_response(
+            model="fal_ai/stub/test-video-model",
+            raw_response=raw,
+            logging_obj=MagicMock(),
+            request_data={"duration": 4},
+        )
+        assert obj.usage == {"duration_seconds": 4.0}
+
+    def test_string_duration_passes_through(self):
+        raw = _build_response({"request_id": "x", "status": "IN_QUEUE"})
+        obj = self.config.transform_video_create_response(
+            model="fal_ai/stub/test-video-model",
+            raw_response=raw,
+            logging_obj=MagicMock(),
+            request_data={"duration": "8"},
+        )
+        assert obj.usage == {"duration_seconds": 8.0}
+
+    def test_auto_duration_falls_back_to_max_for_preauth(self):
+        # Fal's "auto" picks a duration server-side; we don't know yet, so
+        # bill the maximum (15s) to avoid under-charging. Daily reconcile
+        # corrects any over-charge.
+        raw = _build_response({"request_id": "x", "status": "IN_QUEUE"})
+        obj = self.config.transform_video_create_response(
+            model="fal_ai/stub/test-video-model",
+            raw_response=raw,
+            logging_obj=MagicMock(),
+            request_data={"duration": "auto"},
+        )
+        assert obj.usage == {"duration_seconds": 15.0}
+
+    def test_missing_duration_falls_back_to_max(self):
+        raw = _build_response({"request_id": "x", "status": "IN_QUEUE"})
+        obj = self.config.transform_video_create_response(
+            model="fal_ai/stub/test-video-model",
+            raw_response=raw,
+            logging_obj=MagicMock(),
+            request_data={},
+        )
+        assert obj.usage == {"duration_seconds": 15.0}
+
+    def test_no_request_data_falls_back_to_max(self):
+        raw = _build_response({"request_id": "x", "status": "IN_QUEUE"})
+        obj = self.config.transform_video_create_response(
+            model="fal_ai/stub/test-video-model",
+            raw_response=raw,
+            logging_obj=MagicMock(),
+            request_data=None,
+        )
+        assert obj.usage == {"duration_seconds": 15.0}
+
+    def test_garbage_duration_falls_back_to_max(self):
+        raw = _build_response({"request_id": "x", "status": "IN_QUEUE"})
+        obj = self.config.transform_video_create_response(
+            model="fal_ai/stub/test-video-model",
+            raw_response=raw,
+            logging_obj=MagicMock(),
+            request_data={"duration": object()},
+        )
+        assert obj.usage == {"duration_seconds": 15.0}
+
+
 # --------------------------------------------------------- status mapping
 
 

@@ -228,8 +228,44 @@ class FalAIBaseVideoConfig(BaseVideoConfig):
             video_obj.id = encode_video_id_with_provider(
                 video_obj.id, custom_llm_provider, model
             )
+        # Populate usage.duration_seconds so LiteLLM's video cost calculator
+        # (litellm/cost_calculator.py:1276, the _VIDEO_CALL_TYPES branch) can
+        # multiply by ``output_cost_per_second`` from the model_prices JSON.
+        # Without this the calculator falls back to duration_seconds=0.0 and
+        # writes spend=0 to LiteLLM_SpendLogs — every call comes out free.
+        # Mirrors RunwayML's pattern in runwayml/videos/transformation.py.
+        video_obj.usage = {
+            "duration_seconds": self._estimate_billed_duration(request_data),
+        }
         self._capture_billable_units(video_obj, raw_response)
         return video_obj
+
+    # Max output length seedance allows (queue spec: duration "4"-"15" or "auto").
+    # Used as the upper-bound for pre-auth when the caller says "auto".
+    DEFAULT_MAX_DURATION_SECONDS: ClassVar[float] = 15.0
+
+    def _estimate_billed_duration(
+        self, request_data: Optional[Dict]
+    ) -> float:
+        """
+        Best-effort billed-duration estimate for cost pre-auth.
+
+        Fal bills per-second of generated output. The caller may send
+        ``duration`` as an integer/string like ``"4"`` or as ``"auto"``
+        (the Fal default — Fal picks somewhere in the 4-15s range). For
+        ``"auto"`` we conservatively bill the maximum so we never
+        under-charge; daily reconciliation against Fal's billing CSV
+        (see the /fal-cost-audit operator skill) corrects any drift.
+        """
+        if not request_data:
+            return self.DEFAULT_MAX_DURATION_SECONDS
+        raw = request_data.get("duration")
+        if raw is None:
+            return self.DEFAULT_MAX_DURATION_SECONDS
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return self.DEFAULT_MAX_DURATION_SECONDS
 
     # ------------------------------------------------------ status retrieve
 
