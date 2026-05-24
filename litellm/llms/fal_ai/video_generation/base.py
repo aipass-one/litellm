@@ -228,8 +228,44 @@ class FalAIBaseVideoConfig(BaseVideoConfig):
             video_obj.id = encode_video_id_with_provider(
                 video_obj.id, custom_llm_provider, model
             )
+        # Populate usage.duration_seconds so LiteLLM's video cost calculator
+        # (litellm/cost_calculator.py:1276, the _VIDEO_CALL_TYPES branch) can
+        # multiply by ``output_cost_per_second`` from the model_prices JSON.
+        # Without this the calculator falls back to duration_seconds=0.0 and
+        # writes spend=0 to LiteLLM_SpendLogs — every call comes out free.
+        # Mirrors RunwayML's pattern in runwayml/videos/transformation.py.
+        video_obj.usage = {
+            "duration_seconds": self._estimate_billed_duration(request_data),
+        }
         self._capture_billable_units(video_obj, raw_response)
         return video_obj
+
+    # Max output length seedance allows (queue spec: duration "4"-"15" or "auto").
+    # Used as the upper-bound for pre-auth when the caller says "auto".
+    DEFAULT_MAX_DURATION_SECONDS: ClassVar[float] = 15.0
+
+    def _estimate_billed_duration(
+        self, request_data: Optional[Dict]
+    ) -> float:
+        """
+        Best-effort billed-duration estimate for cost pre-auth.
+
+        Fal bills per-second of generated output. The caller may send
+        ``duration`` as an integer/string like ``"4"`` or as ``"auto"``
+        (the Fal default — Fal picks somewhere in the 4-15s range). For
+        ``"auto"`` we conservatively bill the maximum so we never
+        under-charge; daily reconciliation against Fal's billing CSV
+        (see the /fal-cost-audit operator skill) corrects any drift.
+        """
+        if not request_data:
+            return self.DEFAULT_MAX_DURATION_SECONDS
+        raw = request_data.get("duration")
+        if raw is None:
+            return self.DEFAULT_MAX_DURATION_SECONDS
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return self.DEFAULT_MAX_DURATION_SECONDS
 
     # ------------------------------------------------------ status retrieve
 
@@ -297,6 +333,7 @@ class FalAIBaseVideoConfig(BaseVideoConfig):
         raw_response: httpx.Response,
         logging_obj: LiteLLMLoggingObj,
     ) -> bytes:
+        self._record_result_billable_units(raw_response, logging_obj)
         data = raw_response.json()
         video_url = self._extract_video_url(data)
         httpx_client: HTTPHandler = _get_httpx_client()
@@ -309,6 +346,7 @@ class FalAIBaseVideoConfig(BaseVideoConfig):
         raw_response: httpx.Response,
         logging_obj: LiteLLMLoggingObj,
     ) -> bytes:
+        self._record_result_billable_units(raw_response, logging_obj)
         data = raw_response.json()
         video_url = self._extract_video_url(data)
         async_httpx_client: AsyncHTTPHandler = get_async_httpx_client(
@@ -317,6 +355,62 @@ class FalAIBaseVideoConfig(BaseVideoConfig):
         video_response = await async_httpx_client.get(video_url)
         video_response.raise_for_status()
         return video_response.content
+
+    def _record_result_billable_units(
+        self,
+        raw_response: httpx.Response,
+        logging_obj: LiteLLMLoggingObj,
+    ) -> None:
+        """
+        Capture Fal's authoritative ``x-fal-billable-units`` from the queue
+        result-fetch response.
+
+        Empirically verified (live test 2026-05-24): Fal only emits this
+        header on the result fetch (``GET {response_url}``), not on the
+        submit ACK or status polls. So this is the only point in the
+        lifecycle where the real-cost signal is available.
+
+        LiteLLM's cost callback fires once at create-time with the
+        pre-auth estimate from ``usage.duration_seconds`` — there's no
+        hook to retroactively update the spend log row from this value.
+        We attach it to ``logging_obj.model_call_details`` for downstream
+        visibility and emit a structured log line so the
+        ``/fal-cost-audit`` operator skill can reconcile against Fal's
+        ``/v1/models/usage`` CSV.
+
+        Note: for video the unit isn't seconds — empirically 4 s @ 480p
+        yields ~40 billable units, so the conversion to USD requires a
+        different per-unit price than ``output_cost_per_second``. Until
+        we calibrate that, treat the captured value as raw audit data,
+        not a directly-usable cost.
+        """
+        units_header = raw_response.headers.get("x-fal-billable-units")
+        if units_header is None:
+            return
+        try:
+            units = float(units_header)
+        except (TypeError, ValueError):
+            return
+
+        if hasattr(logging_obj, "model_call_details") and isinstance(
+            getattr(logging_obj, "model_call_details", None), dict
+        ):
+            extra = logging_obj.model_call_details.setdefault(
+                "additional_args", {}
+            )
+            if isinstance(extra, dict):
+                extra["fal_billable_units"] = units
+
+        request_id = raw_response.headers.get("x-fal-request-id", "")
+        try:
+            from litellm._logging import verbose_logger
+
+            verbose_logger.info(
+                "fal_ai.video billable-units captured "
+                f"request_id={request_id} units={units}"
+            )
+        except Exception:
+            pass
 
     # ------------------------------------------------------------- helpers
 
