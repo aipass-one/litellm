@@ -33,6 +33,7 @@ and is unnecessary now that we read Fal's authoritative header.
 
 from typing import Any
 
+from litellm._logging import verbose_logger
 from litellm.types.utils import ImageResponse
 from litellm.types.videos.main import VideoObject
 
@@ -56,6 +57,18 @@ FAL_UNIT_PRICES = {
     "fal-ai/nano-banana-2":            (0.08,    "images"),
     "fal-ai/recraft/upscale/crisp":    (0.004,   "images"),
     "fal-ai/recraft/upscale/creative": (0.25,    "images"),
+    # text-to-image / edit endpoints restored after the 2026-05 overhaul
+    # dropped them (silently billed $0 from ~May 9). "images" kind => exact
+    # when Fal sends x-fal-billable-units, else a safe flat per-image price
+    # (matches the pre-overhaul flat rate; never overcharges). flux* are
+    # per-megapixel on Fal but their transform doesn't capture the header, so
+    # flat-per-image (~1MP) is the safe fallback. Prices from Fal pricing API.
+    "fal-ai/flux-pro/v1.1":                       (0.04,    "images"),
+    "fal-ai/flux-pro/v1.1-ultra":                 (0.06,    "images"),
+    "fal-ai/flux/schnell":                        (0.003,   "images"),
+    "fal-ai/recraft/v3/text-to-image":            (0.04,    "images"),
+    "fal-ai/bytedance/seedream/v3/text-to-image": (0.03,    "images"),
+    "fal-ai/nano-banana-2/edit":                  (0.08,    "images"),
     # compute-second billed (no header on legacy endpoints)
     "fal-ai/esrgan":                   (0.00111, "compute_seconds"),
     "fal-ai/aura-sr":                  (0.00125, "compute_seconds"),
@@ -88,10 +101,16 @@ def cost_calculator(model: str, image_response: Any) -> float:
     endpoint = _endpoint_id(model)
     unit_price_kind = FAL_UNIT_PRICES.get(endpoint)
     if unit_price_kind is None:
-        # Unknown Fal endpoint. Fall back to LiteLLM's generic cost lookup
-        # which will return 0.0 if no price is configured. Prefer this over
-        # a hard error so a new Fal model can be added to model_list before
-        # FAL_UNIT_PRICES is updated.
+        # Unknown Fal endpoint — bill $0 rather than hard-error so a new model
+        # can be added to model_list before FAL_UNIT_PRICES. Warn loudly: a
+        # silently-unpriced endpoint is how flux / recraft-v3 / seedream went
+        # free for weeks after the 2026-05 overhaul.
+        verbose_logger.warning(
+            "fal_ai cost_calculator: no FAL_UNIT_PRICES entry for endpoint "
+            "'%s' (model=%s) — billing $0. Add it to FAL_UNIT_PRICES.",
+            endpoint,
+            model,
+        )
         return 0.0
     unit_price, unit_kind = unit_price_kind
 
