@@ -11,6 +11,7 @@ from .flux_pro_v11_transformation import FalAIFluxProV11Config
 from .flux_pro_v11_ultra_transformation import FalAIFluxProV11UltraConfig
 from .flux_schnell_transformation import FalAIFluxSchnellConfig
 from .gpt_image2_transformation import FalAIGptImage2Config
+from .nano_banana_transformation import FalAINanoBananaConfig
 from .ideogram_v3_transformation import FalAIIdeogramV3Config
 from .imagen4_transformation import FalAIImagen4Config
 from .nano_banana_2_transformation import FalAINanoBanana2Config
@@ -24,6 +25,7 @@ __all__ = [
     "FalAIImageGenerationConfig",
     "FalAIGptImage2Config",
     "FalAIImagen4Config",
+    "FalAINanoBananaConfig",
     "FalAIRecraftV3Config",
     "FalAIBriaConfig",
     "FalAIFluxProV11Config",
@@ -50,13 +52,16 @@ def get_fal_ai_image_generation_config(model: str) -> BaseImageGenerationConfig:
     """
     model_lower = model.lower()
 
-    # Most-specific-first to avoid substring collisions.
+    # Most-specific-first to avoid substring collisions
+    # (e.g. "nano-banana-pro"/"nano-banana-2" must precede "nano-banana").
     if "nano-banana-pro" in model_lower:
         return FalAINanoBananaProConfig()
     if "nano-banana-2" in model_lower:
         return FalAINanoBanana2Config()
     if "gpt-image-2" in model_lower:
         return FalAIGptImage2Config()
+    if "nano-banana" in model_lower or "gemini-25-flash-image" in model_lower:
+        return FalAINanoBananaConfig()
     if "imagen4" in model_lower or "imagen-4" in model_lower:
         return FalAIImagen4Config()
     elif "recraft" in model_lower:
