@@ -9,11 +9,16 @@ TranscriptionVerbose/Diarized type.
 
 from unittest.mock import patch
 
+from pydantic import BaseModel
+
 from litellm.cost_calculator import completion_cost
 from litellm.litellm_core_utils.llm_response_utils.convert_dict_to_response import (
     convert_to_model_response_object,
 )
-from litellm.types.utils import TranscriptionResponse
+from litellm.types.utils import (
+    TranscriptionResponse,
+    TranscriptionUsageDurationObject,
+)
 
 
 class TestTranscriptionDurationNotInResponseBody:
@@ -130,6 +135,42 @@ class TestCostCalculatorReadsDurationFromHiddenParams:
         mock_cost_fn.assert_called_once()
         _, kwargs = mock_cost_fn.call_args
         assert kwargs["duration"] == 42.7
+
+    @patch("litellm.cost_calculator.openai_cost_per_second")
+    def test_completion_cost_falls_back_to_base_model_usage_duration(
+        self, mock_cost_fn
+    ):
+        class ProviderTranscriptionResponse(BaseModel):
+            text: str
+            usage: TranscriptionUsageDurationObject
+
+        mock_cost_fn.return_value = (0.0027, 0.0)
+        provider_response = ProviderTranscriptionResponse(
+            text="test",
+            usage=TranscriptionUsageDurationObject(type="duration", seconds=27),
+        )
+        response = convert_to_model_response_object(
+            response_object=provider_response.model_dump(),
+            model_response_object=TranscriptionResponse(),
+            hidden_params={
+                "model": "whisper-1",
+                "custom_llm_provider": "openai",
+            },
+            response_type="audio_transcription",
+        )
+        response_body = response.model_dump()
+
+        completion_cost(
+            completion_response=response,
+            model="whisper-1",
+            call_type="atranscription",
+        )
+
+        mock_cost_fn.assert_called_once()
+        _, kwargs = mock_cost_fn.call_args
+        assert kwargs["duration"] == 27
+        assert response.model_dump() == response_body
+        assert "duration" not in response_body
 
     @patch("litellm.cost_calculator.openai_cost_per_second")
     def test_completion_cost_defaults_to_zero_duration(self, mock_cost_fn):
