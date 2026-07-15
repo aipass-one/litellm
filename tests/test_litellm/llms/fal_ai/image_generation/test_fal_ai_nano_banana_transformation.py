@@ -163,4 +163,4 @@ def test_cost_calculator_scales_with_image_count():
         data=[ImageObject(url="https://x/1.png"), ImageObject(url="https://x/2.png")]
     )
     cost = cost_calculator(model="fal-ai/nano-banana", image_response=image_response)
-    assert cost == pytest.approx(0.078)
+    assert cost == pytest.approx(0.0796)

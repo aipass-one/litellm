@@ -8,7 +8,6 @@ calculation through PR #22's header path.
 """
 from unittest.mock import MagicMock
 
-import httpx
 import pytest
 
 from litellm.llms.fal_ai.cost_calculator import cost_calculator
@@ -274,8 +273,8 @@ def test_cost_standard_header_path():
         model="fal_ai/bytedance/seedance-2.0/image-to-video",
         image_response=obj,
     )
-    # 5 output seconds × $0.3024 = $1.512
-    assert cost == pytest.approx(1.512, abs=1e-6)
+    # 5 Fal billable units × $0.014/unit = $0.07
+    assert cost == pytest.approx(0.07, abs=1e-6)
 
 
 def test_cost_fast_header_path():
@@ -284,8 +283,8 @@ def test_cost_fast_header_path():
         model="fal_ai/bytedance/seedance-2.0/fast/image-to-video",
         image_response=obj,
     )
-    # 5 output seconds × $0.2419 = $1.2095
-    assert cost == pytest.approx(1.2095, abs=1e-6)
+    # 5 Fal billable units × $0.0112/unit = $0.056
+    assert cost == pytest.approx(0.056, abs=1e-6)
 
 
 def test_cost_no_header_falls_back_and_marks_reconcile():
@@ -300,8 +299,9 @@ def test_cost_no_header_falls_back_and_marks_reconcile():
         model="fal_ai/bytedance/seedance-2.0/image-to-video",
         image_response=obj,
     )
-    # No header, no per-image, falls through to unit_price * 5
-    assert cost == pytest.approx(0.3024 * 5, abs=1e-6)
+    # No header: provisional five-unit fallback, explicitly marked for exact
+    # request-level reconciliation.
+    assert cost == pytest.approx(0.014 * 5, abs=1e-6)
     assert obj._hidden_params.get("needs_reconcile") is True
 
 

@@ -16,11 +16,11 @@ Three paths, in priority order:
    ben/v2, nano-banana family, seedance, …). Multiplies
    ``fal_billable_units`` by the model's static ``unit_price``.
 
-2. **Fixed per-image** — the four ``"images"``-billed endpoints
+2. **Fixed per-image** — the ``"images"``-billed endpoints
    (recraft/upscale/{crisp,creative}, nano-banana families when the header
    is absent). Returns ``num_images_returned × unit_price``.
 
-3. **Compute-seconds flat estimate** — the three legacy compute-priced
+3. **Compute-seconds flat estimate** — legacy compute-priced
    endpoints (esrgan, aura-sr, birefnet/v2) that don't emit the header.
    Returns a per-model flat estimate calibrated against historical Fal
    billing. Real drift surfaces via the ``fal-cost-audit`` operator skill.
@@ -55,6 +55,8 @@ FAL_UNIT_PRICES = {
     # falls back to per-image multiply when header absent)
     "fal-ai/nano-banana-pro":          (0.15,    "images"),
     "fal-ai/nano-banana-2":            (0.08,    "images"),
+    "fal-ai/nano-banana":              (0.0398,  "images"),
+    "fal-ai/nano-banana-pro/edit":     (0.15,    "images"),
     "fal-ai/recraft/upscale/crisp":    (0.004,   "images"),
     "fal-ai/recraft/upscale/creative": (0.25,    "images"),
     # text-to-image / edit endpoints restored after the 2026-05 overhaul
@@ -72,10 +74,12 @@ FAL_UNIT_PRICES = {
     # compute-second billed (no header on legacy endpoints)
     "fal-ai/esrgan":                   (0.00111, "compute_seconds"),
     "fal-ai/aura-sr":                  (0.00125, "compute_seconds"),
+    "fal-ai/birefnet":                 (0.0008,  "compute_seconds"),
     "fal-ai/birefnet/v2":              (0.00111, "compute_seconds"),
-    # video — billed per output second (header-emitting via PR #22 pattern)
-    "bytedance/seedance-2.0/image-to-video":      (0.3024, "seconds"),
-    "bytedance/seedance-2.0/fast/image-to-video": (0.2419, "seconds"),
+    # video — Fal reports provider-defined billable units, not output seconds.
+    # Verified against /v1/models/pricing on 2026-07-15.
+    "bytedance/seedance-2.0/image-to-video":      (0.014,  "units"),
+    "bytedance/seedance-2.0/fast/image-to-video": (0.0112, "units"),
 }
 
 # Per-model flat estimates for compute-second endpoints that don't emit the
@@ -84,6 +88,7 @@ FAL_UNIT_PRICES = {
 COMPUTE_SECOND_FALLBACK = {
     "fal-ai/esrgan":      0.008,   # ~7s × $0.00111
     "fal-ai/aura-sr":     0.015,   # ~12s × $0.00125
+    "fal-ai/birefnet":    0.004,   # ~5s × $0.0008
     "fal-ai/birefnet/v2": 0.008,   # ~7s × $0.00111
 }
 
@@ -125,7 +130,7 @@ def cost_calculator(model: str, image_response: Any) -> float:
     units = hidden.get("fal_billable_units")
 
     # Path 1 — exact via response header (the 8+ header-emitting models,
-    # including seedance video models which bill per output second).
+    # including Seedance video models which bill provider-defined units).
     if units is not None:
         try:
             return float(units) * unit_price
@@ -140,8 +145,9 @@ def cost_calculator(model: str, image_response: Any) -> float:
 
     # Path 3 — endpoints without a usable header. Mark for reconciliation
     # (the audit skill or a future async reconciler can correct after the
-    # fact). For per-second video the default fallback assumes ~5 output
-    # seconds; the audit catches drift the next day.
+    # fact). The generic fallback assumes five billing units; callers must not
+    # treat it as final evidence. The request-level billing-event reconciler is
+    # authoritative for asynchronous Fal video.
     hidden["needs_reconcile"] = True
     image_response._hidden_params = hidden
     return COMPUTE_SECOND_FALLBACK.get(endpoint, unit_price * 5)
