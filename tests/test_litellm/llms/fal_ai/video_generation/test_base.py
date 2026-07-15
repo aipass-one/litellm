@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
+from litellm.exceptions import BadRequestError, ContentPolicyViolationError
 from litellm.llms.fal_ai.video_generation.base import FalAIBaseVideoConfig
 
 
@@ -418,6 +419,126 @@ class TestContentRequest:
     def test_extract_video_url_missing_raises(self):
         with pytest.raises(ValueError, match="Video URL not found"):
             self.config._extract_video_url({})
+
+    def test_sync_content_raises_fal_http_error_before_video_url_parsing(self):
+        raw = httpx.Response(
+            422,
+            request=httpx.Request("GET", "https://queue.fal.run/result"),
+            json={"detail": "Input image cannot be processed"},
+        )
+
+        with pytest.raises(httpx.HTTPStatusError) as raised:
+            self.config.transform_video_content_response(raw, MagicMock())
+
+        assert raised.value.response.status_code == 422
+        assert "Video URL not found" not in str(raised.value)
+
+    @pytest.mark.asyncio
+    async def test_async_content_raises_fal_http_error_before_video_url_parsing(self):
+        raw = httpx.Response(
+            422,
+            request=httpx.Request("GET", "https://queue.fal.run/result"),
+            json={"detail": "Input image cannot be processed"},
+        )
+
+        with pytest.raises(httpx.HTTPStatusError) as raised:
+            await self.config.async_transform_video_content_response(raw, MagicMock())
+
+        assert raised.value.response.status_code == 422
+        assert "Video URL not found" not in str(raised.value)
+
+    def test_content_handler_maps_fal_422_to_safe_non_retryable_policy_error(self):
+        from litellm.llms.custom_httpx.http_handler import HTTPHandler
+        from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
+        from litellm.types.videos.utils import encode_video_id_with_provider
+
+        private_url = "https://private.example/user-photo.png?token=secret"
+        raw = httpx.Response(
+            422,
+            request=httpx.Request("GET", "https://queue.fal.run/result"),
+            json={
+                "detail": (
+                    "The images provided may contain likenesses of real people "
+                    "or other private information that cannot be processed."
+                ),
+                "image_url": private_url,
+            },
+        )
+        client = MagicMock(spec=HTTPHandler)
+        client.get.return_value = raw
+        encoded_id = encode_video_id_with_provider(
+            "abc-123", "fal_ai", "fal_ai/stub/test-video-model"
+        )
+
+        with pytest.raises(ContentPolicyViolationError) as raised:
+            BaseLLMHTTPHandler().video_content_handler(
+                video_id=encoded_id,
+                video_content_provider_config=self.config,
+                custom_llm_provider="fal_ai",
+                litellm_params={},
+                logging_obj=MagicMock(),
+                timeout=10,
+                api_key="test-key",
+                client=client,
+            )
+
+        # LiteLLM intentionally presents provider policy failures through its
+        # OpenAI-compatible 400 content-policy exception. The important
+        # contract is that this is non-retryable, never a misleading 500, and
+        # never echoes Fal's response body or private media URL.
+        assert raised.value.status_code == 400
+        rendered = str(raised.value)
+        assert "content_policy_violation" in rendered
+        assert "Video URL not found" not in rendered
+        assert private_url not in rendered
+
+    def test_fal_422_policy_message_is_useful_without_echoing_private_input(self):
+        private_url = "https://private.example/user-photo.png?token=secret"
+        private_prompt = "make this private person dance"
+        error = self.config.get_error_class(
+            error_message=(
+                '{"detail":[{"loc":["body","image_url"],'
+                '"msg":"The image may contain a real-person likeness",'
+                f'"input":"{private_url}","prompt":"{private_prompt}"}}]}}'
+            ),
+            status_code=422,
+            headers={},
+        )
+
+        assert isinstance(error, ContentPolicyViolationError)
+        rendered = str(error)
+        assert "real-person likeness" in rendered
+        assert private_url not in rendered
+        assert private_prompt not in rendered
+
+    def test_policy_signal_survives_even_when_nested_in_redacted_body(self):
+        error = self.config.get_error_class(
+            error_message=(
+                '{"body":"content_policy_violation for secret prompt",'
+                '"image_url":"data:image/png;base64,PRIVATE"}'
+            ),
+            status_code=422,
+            headers={},
+        )
+
+        assert isinstance(error, ContentPolicyViolationError)
+        rendered = str(error)
+        assert "content_policy_violation" in rendered
+        assert "secret prompt" not in rendered
+        assert "PRIVATE" not in rendered
+
+    def test_unstructured_fal_error_body_is_not_echoed(self):
+        error = self.config.get_error_class(
+            error_message="private prompt at https://private.example/image.png",
+            status_code=422,
+            headers={},
+        )
+
+        assert isinstance(error, BadRequestError)
+        rendered = str(error)
+        assert "Fal video content request failed" in rendered
+        assert "private prompt" not in rendered
+        assert "private.example" not in rendered
 
     def test_record_result_billable_units_attaches_to_logging_obj(self):
         raw = _build_response(

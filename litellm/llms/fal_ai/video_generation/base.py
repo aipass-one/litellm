@@ -70,6 +70,28 @@ def _strip_provider_prefix(model: str) -> str:
     return model[len("fal_ai/"):] if model.startswith("fal_ai/") else model
 
 
+def _sanitize_fal_video_error(error_message: str) -> str:
+    """Return a safe Fal error without echoing any upstream response body."""
+    lowered = (error_message or "").lower()
+    has_policy_signal = (
+        "content_policy_violation" in lowered
+        or "content checker" in lowered
+        or "likenesses of real people" in lowered
+        or "likeness of real people" in lowered
+        or "real-person likeness" in lowered
+        or "private information that cannot be processed" in lowered
+    )
+    if has_policy_signal:
+        return (
+            "content_policy_violation: The supplied media may contain a "
+            "real-person likeness or private information that cannot be processed."
+        )
+    # Even a structured provider body can place the prompt or media bytes under
+    # an unexpected field. Never forward it; the original HTTP status remains
+    # available to LiteLLM's error classifier.
+    return "Fal video content request failed"
+
+
 class FalAIBaseVideoConfig(BaseVideoConfig):
     """
     Subclass overrides
@@ -126,7 +148,9 @@ class FalAIBaseVideoConfig(BaseVideoConfig):
         status_code: int,
         headers: Union[dict, httpx.Headers],
     ) -> BaseLLMException:
-        return classify_fal_ai_error(error_message, status_code, headers)
+        return classify_fal_ai_error(
+            _sanitize_fal_video_error(error_message), status_code, headers
+        )
 
     # ---------------------------------------------------------- url building
 
@@ -334,6 +358,7 @@ class FalAIBaseVideoConfig(BaseVideoConfig):
         logging_obj: LiteLLMLoggingObj,
     ) -> bytes:
         self._record_result_billable_units(raw_response, logging_obj)
+        raw_response.raise_for_status()
         data = raw_response.json()
         video_url = self._extract_video_url(data)
         httpx_client: HTTPHandler = _get_httpx_client()
@@ -347,6 +372,7 @@ class FalAIBaseVideoConfig(BaseVideoConfig):
         logging_obj: LiteLLMLoggingObj,
     ) -> bytes:
         self._record_result_billable_units(raw_response, logging_obj)
+        raw_response.raise_for_status()
         data = raw_response.json()
         video_url = self._extract_video_url(data)
         async_httpx_client: AsyncHTTPHandler = get_async_httpx_client(
@@ -378,11 +404,10 @@ class FalAIBaseVideoConfig(BaseVideoConfig):
         ``/fal-cost-audit`` operator skill can reconcile against Fal's
         ``/v1/models/usage`` CSV.
 
-        Note: for video the unit isn't seconds — empirically 4 s @ 480p
-        yields ~40 billable units, so the conversion to USD requires a
-        different per-unit price than ``output_cost_per_second``. Until
-        we calibrate that, treat the captured value as raw audit data,
-        not a directly-usable cost.
+        Video units are not output seconds. The endpoint-specific unit price is
+        maintained in ``fal_ai.cost_calculator`` and can price a valid header,
+        but AI Pass still treats the exact request-level Fal Billing Event as
+        final evidence because failed results may omit this header entirely.
         """
         units_header = raw_response.headers.get("x-fal-billable-units")
         if units_header is None:
