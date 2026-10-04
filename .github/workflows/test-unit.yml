@@ -51,7 +51,7 @@ jobs:
         include:
           - shard: core-utils
             artifact-name: core-utils
-            test-path: "tests/test_litellm/litellm_core_utils"
+            test-path: "tests/test_litellm/litellm_core_utils tests/unit/decisions"
             workers: 2
             reruns: 1
             timeout-minutes: 20
@@ -142,6 +142,7 @@ jobs:
             artifact-name: proxy-endpoints
             test-path: >-
               tests/test_litellm/proxy/analytics_endpoints
+              tests/unit/proxy/decisions_endpoints
               tests/test_litellm/proxy/management_endpoints
               tests/test_litellm/proxy/list_api
               tests/test_litellm/proxy/memory
