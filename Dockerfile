@@ -18,7 +18,7 @@ FROM $LITELLM_BUILD_IMAGE AS pgbouncer-builder
 ARG PGBOUNCER_VERSION
 ARG PGBOUNCER_SHA256
 USER root
-RUN apk add --no-cache build-base pkgconf libevent-dev openssl-dev curl
+RUN apk add --no-cache build-base pkgconf libevent=2.1.13-r1 libevent-dev=2.1.13-r1 openssl-dev curl
 WORKDIR /build
 RUN curl -fsSL -o pgbouncer.tar.gz "https://www.pgbouncer.org/downloads/files/${PGBOUNCER_VERSION}/pgbouncer-${PGBOUNCER_VERSION}.tar.gz" && \
     echo "${PGBOUNCER_SHA256}  pgbouncer.tar.gz" | sha256sum -c - && \
@@ -53,15 +53,22 @@ USER root
 COPY --from=uvbin /uv /usr/local/bin/uv
 COPY --from=uvbin /uvx /usr/local/bin/uvx
 
-RUN apk add --no-cache \
+# AI Pass: Wolfi's 2026-10 OpenSSL 4 transition makes the newest python-3.13,
+# nodejs-26, libevent and rust/libcurl builds pull openssl-4.0-libcrypto, whose
+# /etc/ssl/*.cnf clash with the openssl 3 CLI. Pin the versions the live 1.102.1
+# image runs (OpenSSL 3.6.4, Python 3.13.15, Node 26.10.0) until we move to
+# OpenSSL 4 on purpose. This throwaway stage only needs the openssl 3 CLI for
+# Prisma's engine detection, so it tolerates the clashing config files.
+RUN apk add --no-cache --force-overwrite \
     bash \
     gcc \
-    python-3.13 \
-    python-3.13-dev \
+    python-3.13=3.13.15_git20260918-r1 \
+    python-3.13-base=3.13.15_git20260918-r1 \
+    python-3.13-dev=3.13.15_git20260918-r1 \
     rust \
     openssl \
     openssl-dev \
-    nodejs \
+    nodejs-26=26.10.0-r0 \
     npm \
     libsndfile
 
@@ -126,7 +133,10 @@ USER root
 RUN echo "https://packages.wolfi.dev/os" >> /etc/apk/repositories
 
 # node (without npm) is required by the prisma CLI at runtime
-RUN apk add --no-cache bash openssl tzdata nodejs python-3.13 libsndfile libevent
+# AI Pass: pinned to the live 1.102.1 versions; see the builder stage note.
+RUN apk add --no-cache bash openssl tzdata nodejs-26=26.10.0-r0 \
+    python-3.13=3.13.15_git20260918-r1 python-3.13-base=3.13.15_git20260918-r1 \
+    libsndfile libevent=2.1.13-r1
 COPY --from=pgbouncer-builder /usr/local/bin/pgbouncer /usr/local/bin/pgbouncer
 
 WORKDIR /app
