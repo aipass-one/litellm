@@ -11,6 +11,7 @@ import importlib
 from collections.abc import Callable, Mapping, Sequence
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass, field
+from itertools import chain
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Final
 
@@ -241,6 +242,11 @@ LAZY_FEATURES: Final[tuple[LazyFeature, ...]] = (
         path_prefixes=("/v1/evals", "/evals"),
     ),
     LazyFeature(
+        name="decisions",
+        module_path="litellm.proxy.decisions_endpoints.endpoints",
+        path_prefixes=("/v1/decisions", "/decisions"),
+    ),
+    LazyFeature(
         name="claude_code_marketplace",
         module_path="litellm.proxy.anthropic_endpoints.claude_code_endpoints",
         path_prefixes=("/claude-code",),
@@ -350,6 +356,10 @@ def _lazy_slots(app: "FastAPI") -> Mapping[str, BaseRoute | None]:
     return app.state.lazy_slots if hasattr(app.state, "lazy_slots") else MappingProxyType({})
 
 
+def _lazy_routes(app: "FastAPI") -> Mapping[str, tuple[BaseRoute, ...]]:
+    return app.state.lazy_routes if hasattr(app.state, "lazy_routes") else MappingProxyType({})
+
+
 def reserve_lazy_slot(app: "FastAPI", name: str, features: tuple[LazyFeature, ...] = LAZY_FEATURES) -> None:
     """Record the route the feature's router used to be included after, so its routes
     are spliced back in there once it loads and keep the same precedence. Anchoring on
@@ -421,11 +431,8 @@ async def _force_load(app: "FastAPI", feat: LazyFeature, features: tuple[LazyFea
             module: Final = await loop.run_in_executor(None, importlib.import_module, feat.module_path)
             before: Final = len(app.router.routes)
             feat.register_fn(app, module)
-            previous: Final[Mapping[str, tuple[BaseRoute, ...]]] = (
-                app.state.lazy_routes if hasattr(app.state, "lazy_routes") else MappingProxyType({})
-            )
             lazy_routes: Final[Mapping[str, tuple[BaseRoute, ...]]] = MappingProxyType(
-                {**previous, feat.module_path: tuple(app.router.routes[before:])}
+                {**_lazy_routes(app), feat.module_path: tuple(app.router.routes[before:])}
             )
             app.state.lazy_routes = lazy_routes  # rebind-ok: the app owns the record of which routes each feature added
             app.router.routes[:] = hot_routes_first(  # rebind-ok: the app owns its route table
@@ -499,6 +506,10 @@ def _make_warmup_router(app: "FastAPI") -> "APIRouter":
         }
 
     return router
+
+
+def lazy_owned_routes(app: "FastAPI") -> frozenset[int]:
+    return frozenset(id(route) for route in chain.from_iterable(_lazy_routes(app).values()))
 
 
 def loaded_lazy_modules(app: "FastAPI") -> frozenset[str]:

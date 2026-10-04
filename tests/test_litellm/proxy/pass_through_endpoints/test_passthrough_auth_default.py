@@ -61,7 +61,7 @@ async def test_register_passthrough_with_auth_true_works_for_oss(monkeypatch):
     # Regression: setting ``auth: true`` used to raise at startup
     # unless ``premium_user`` was True, leaving OSS with no safe
     # configuration.
-    app = MagicMock(spec=FastAPI)
+    app = FastAPI()
     visited: set = set()
 
     endpoint = PassThroughGenericEndpoint(

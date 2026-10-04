@@ -1165,6 +1165,9 @@ def function_setup(
             except Exception as e:
                 verbose_logger.debug("Error extracting messages from Google contents: %s", e)
                 messages = "default-message-value"
+        elif call_type in (CallTypes.decisions.value, CallTypes.adecisions.value):
+            decisions_state: Final = args[1] if len(args) > 1 else kwargs.get("state", "")
+            messages = decisions_state if isinstance(decisions_state, str) else json.dumps(decisions_state)
         elif call_type in NON_INFERENCE_CALL_TYPES:
             messages = []  # mutable-ok: loggers require a list here and Logging copies it
         else:
