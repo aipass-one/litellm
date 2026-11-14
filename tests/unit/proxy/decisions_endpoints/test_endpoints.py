@@ -55,7 +55,9 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.delenv("REDIS_HOST", raising=False)
     monkeypatch.delenv("REDIS_URL", raising=False)
     cleanup_router_config_variables()
-    config_path: Final = Path(__file__).parents[3] / "test_litellm" / "proxy" / "test_configs" / "test_config_no_auth.yaml"
+    config_path: Final = (
+        Path(__file__).parents[3] / "test_litellm" / "proxy" / "test_configs" / "test_config_no_auth.yaml"
+    )
     asyncio.run(initialize(config=str(config_path), debug=True))
     monkeypatch.setattr(
         litellm.proxy.proxy_server,
@@ -330,13 +332,26 @@ def test_an_eagerly_registered_decisions_route_still_yields_to_a_config_pass_thr
 @pytest.mark.asyncio
 @pytest.mark.parametrize("endpoint", ("/v1/decisions", "/decisions"))
 @pytest.mark.parametrize(
-    ("provider_model", "upstream_url", "wire_model"),
+    ("provider_model", "upstream_url", "wire_model", "input_rate", "output_tokens"),
     (
-        ("typesafe/jev-1.13", "https://api.typesafe.ai/v1/systemone", "jev-1.13"),
-        ("openrouter/typesafe/jev-1.13", "https://openrouter.ai/api/alpha/decisions", "typesafe/jev-1.13"),
+        ("typesafe/jev-1.13", "https://api.typesafe.ai/v1/systemone", "jev-1.13", 4.2e-08, _OUTPUT_TOKENS),
+        (
+            "openrouter/typesafe/jev-1.13",
+            "https://openrouter.ai/api/alpha/decisions",
+            "typesafe/jev-1.13",
+            4.2e-08,
+            _OUTPUT_TOKENS,
+        ),
+        (
+            "gemini/gemini-decision-1",
+            "https://generativelanguage.googleapis.com/v1beta/decisions",
+            "gemini-decision-1",
+            1e-07,
+            0,
+        ),
     ),
 )
-async def test_jev_virtual_key_cost_header_spendlogs_and_budget(
+async def test_decisions_virtual_key_cost_header_spendlogs_and_budget(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     respx_mock: respx.MockRouter,
@@ -344,6 +359,8 @@ async def test_jev_virtual_key_cost_header_spendlogs_and_budget(
     provider_model: str,
     upstream_url: str,
     wire_model: str,
+    input_rate: float,
+    output_tokens: int,
 ) -> None:
     from unittest.mock import AsyncMock, MagicMock
 
@@ -399,7 +416,17 @@ async def test_jev_virtual_key_cost_header_spendlogs_and_budget(
             ]
         ),
     )
-    upstream: Final = respx_mock.post(upstream_url).respond(json={**_RESPONSE, "model": wire_model})
+    upstream: Final = respx_mock.post(upstream_url).respond(
+        json={
+            **_RESPONSE,
+            "model": wire_model,
+            **(
+                {"usage": {"total_input_tokens": _INPUT_TOKENS, "total_output_tokens": 0}}
+                if provider_model.startswith("gemini/")
+                else {}
+            ),
+        }
+    )
     body: Final = {**_REQUEST, "model": "jev"}
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http_client:
         unauthenticated: Final = await http_client.post(endpoint, json=body)
@@ -410,8 +437,8 @@ async def test_jev_virtual_key_cost_header_spendlogs_and_budget(
         await asyncio.sleep(0)
         GLOBAL_LOGGING_WORKER.start()
         await asyncio.wait_for(GLOBAL_LOGGING_WORKER.flush(), timeout=10)
-        expected: Final = _INPUT_TOKENS * 4.2e-08
-        assert litellm.model_cost[provider_model]["input_cost_per_token"] == 4.2e-08
+        expected: Final = _INPUT_TOKENS * input_rate
+        assert litellm.model_cost[provider_model]["input_cost_per_token"] == input_rate
         assert litellm.model_cost[provider_model]["output_cost_per_token"] == 0
         assert float(response.headers["x-litellm-response-cost"]) == pytest.approx(expected)
         assert json.loads(upstream.calls[0].request.content)["model"] == wire_model
@@ -421,7 +448,7 @@ async def test_jev_virtual_key_cost_header_spendlogs_and_budget(
         assert row["spend"] == pytest.approx(expected)
         assert row["spend"] > 0
         assert row["prompt_tokens"] == _INPUT_TOKENS
-        assert row["completion_tokens"] == _OUTPUT_TOKENS
+        assert row["completion_tokens"] == output_tokens
         assert row["api_key"] == key_hash
         assert row["call_type"] == "adecisions"
         assert row["status"] == "success"
@@ -431,7 +458,9 @@ async def test_jev_virtual_key_cost_header_spendlogs_and_budget(
         )
         prisma.db.litellm_spendlogs.create_many.assert_awaited_once()
         inserted: Final = tuple(
-            row for row in prisma.db.litellm_spendlogs.create_many.call_args.kwargs["data"] if row["status"] == "success"
+            row
+            for row in prisma.db.litellm_spendlogs.create_many.call_args.kwargs["data"]
+            if row["status"] == "success"
         )
         assert len(inserted) == 1
         assert inserted[0]["spend"] == pytest.approx(expected)

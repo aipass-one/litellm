@@ -11,6 +11,7 @@ from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLogging
 from litellm.llms.base_llm.decisions.transformation import DecisionsProviderConfig
 from litellm.llms.cloudflare.decisions.transformation import CLOUDFLARE_DECISIONS_ENDPOINT
 from litellm.llms.custom_httpx.http_handler import _get_httpx_client, get_async_httpx_client
+from litellm.llms.gemini.decisions.transformation import GEMINI_DECISIONS_ENDPOINT, GeminiDecisionsEndpoint
 from litellm.llms.openrouter.decisions.transformation import OPENROUTER_DECISIONS_ENDPOINT
 from litellm.llms.perplexity.decisions.transformation import PERPLEXITY_DECISIONS_ENDPOINT
 from litellm.llms.strands_decider.decisions.transformation import STRANDS_DECIDER_DECISIONS_ENDPOINT
@@ -31,6 +32,7 @@ DECISIONS_ENDPOINTS: Final[Mapping[str, DecisionsProviderConfig]] = MappingProxy
         "openrouter": OPENROUTER_DECISIONS_ENDPOINT,
         "cloudflare": CLOUDFLARE_DECISIONS_ENDPOINT,
         "strands_decider": STRANDS_DECIDER_DECISIONS_ENDPOINT,
+        "gemini": GEMINI_DECISIONS_ENDPOINT,
     }
 )
 
@@ -120,6 +122,12 @@ def _prepare_request(
     endpoint: Final = DECISIONS_ENDPOINTS[provider]
     env_api_base: Final = get_secret_str(endpoint.api_base_env)
     default_api_base: Final = endpoint.default_api_base()
+    if isinstance(endpoint, GeminiDecisionsEndpoint) and (api_base or env_api_base) and api_key is None:
+        raise litellm.BadRequestError(
+            message="When overriding api_base for Gemini Decisions, supply an explicit api_key",
+            model=model,
+            llm_provider=provider,
+        )
     resolved_api_base: Final = api_base or env_api_base or default_api_base
     if resolved_api_base is None:
         raise litellm.BadRequestError(
@@ -157,14 +165,19 @@ def _prepare_request(
             },
         }
     )
+    prepared_headers, prepared_body = (
+        endpoint.prepare_request(canonical_model, validated_request, outbound_headers, resolved_api_key)
+        if isinstance(endpoint, GeminiDecisionsEndpoint)
+        else (outbound_headers, body)
+    )
     return _PreparedDecisionsRequest(
         config=endpoint,
         provider=provider,
         upstream_model=canonical_model,
         url=endpoint.endpoint_url(resolved_api_base, canonical_model),
         api_key=resolved_api_key,
-        headers=outbound_headers,
-        body=body,
+        headers=prepared_headers,
+        body=prepared_body,
     )
 
 

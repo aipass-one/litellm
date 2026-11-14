@@ -1,4 +1,34 @@
 {
+    "gemini/gemini-decision-1": {
+        "input_cost_per_token": 1e-07,
+        "litellm_provider": "gemini",
+        "max_input_tokens": 262144,
+        "mode": "decisions",
+        "output_cost_per_token": 0.0,
+        "rpm": 1500,
+        "source": "https://ai.google.dev/gemini-api/docs/pricing",
+        "supported_endpoints": [
+            "/v1/decisions"
+        ],
+        "supported_modalities": [
+            "text"
+        ],
+        "supports_audio_input": false,
+        "supports_audio_output": false,
+        "supports_computer_use": false,
+        "supports_function_calling": false,
+        "supports_parallel_function_calling": false,
+        "supports_pdf_input": false,
+        "supports_prompt_caching": false,
+        "supports_reasoning": false,
+        "supports_response_schema": false,
+        "supports_tool_choice": false,
+        "supports_url_context": false,
+        "supports_video_input": false,
+        "supports_vision": false,
+        "supports_web_search": false,
+        "tpm": 1000000
+    },
     "sample_spec": {
         "code_interpreter_cost_per_session": 0.0,
         "computer_use_input_cost_per_1k_tokens": 0.0,

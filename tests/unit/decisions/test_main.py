@@ -80,6 +80,90 @@ _PROVIDERS: Final[tuple[tuple[str, str, str, str], ...]] = (
 )
 
 
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.asyncio
+async def test_gemini_decisions_contract_and_input_only_cost(respx_mock: respx.MockRouter, asynchronous: bool) -> None:
+    route = respx_mock.post("https://generativelanguage.googleapis.com/v1beta/decisions").respond(
+        200,
+        json={
+            **_RESPONSE,
+            "usage": {"total_input_tokens": 367, "total_output_tokens": 0},
+        },
+    )
+    params = {
+        "model": "gemini/gemini-decision-1",
+        "state": {"message": "The mug arrived cracked."},
+        "questions": {
+            "damaged": {"type": "noul", "criteria": {"true": "Broken", "false": "Intact"}},
+            "action": {"type": "choice", "criteria": {"replace": "Broken item", "keep": None}},
+            "severity": {"type": "score", "criteria": ["None", "Severe"]},
+        },
+        "api_key": "gemini-test-key",
+        "extra_headers": {"Authorization": "not-forwarded", "X-Goog-Api-Key": "not-forwarded", "X-Test": "kept"},
+    }
+    result = await litellm.adecisions(**params) if asynchronous else litellm.decisions(**params)
+    request = route.calls.last.request
+    body = json.loads(request.content)
+    assert body == {
+        "model": "gemini-decision-1",
+        "input": '{"message": "The mug arrived cracked."}',
+        "questions": {
+            "damaged": {
+                "type": "noul",
+                "instructions": "Does the input match the true rather than false criteria?",
+                "criteria": {"true_description": "Broken", "false_description": "Intact"},
+            },
+            "action": {
+                "type": "choice",
+                "instructions": "Choose the option that best matches the input.",
+                "criteria": {"replace": "Broken item", "keep": ""},
+            },
+            "severity": {
+                "type": "score",
+                "instructions": "Rate the input against the ordered criteria.",
+                "criteria": ["None", "Severe"],
+            },
+        },
+    }
+    assert request.headers["x-goog-api-key"] == "gemini-test-key"
+    assert "authorization" not in request.headers
+    assert request.headers["x-test"] == "kept"
+    assert result.usage.input_tokens == 367
+    assert result.usage.output_tokens == 0
+    assert result.answers["sentiment"].probabilities == {"positive": 0.8, "negative": 0.2}
+    assert litellm.completion_cost(
+        completion_response=result,
+        model="gemini/gemini-decision-1",
+        custom_llm_provider="gemini",
+        call_type="decisions",
+    ) == pytest.approx(0.0000367)
+
+
+def test_gemini_decisions_rejects_custom_host_without_explicit_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "shared-key-must-not-leak")
+    with pytest.raises(litellm.BadRequestError, match="supply an explicit api_key"):
+        litellm.decisions(
+            model="gemini/gemini-decision-1",
+            state="Hello",
+            questions={"ok": {"type": "noul", "instructions": "Is this a greeting?"}},
+            api_base="https://custom.example/v1beta",
+        )
+
+
+@pytest.mark.parametrize("usage", [None, {}, {"total_input_tokens": 367, "total_output_tokens": 2}])
+def test_gemini_decisions_rejects_missing_or_invalid_usage(respx_mock: respx.MockRouter, usage: object) -> None:
+    respx_mock.post("https://generativelanguage.googleapis.com/v1beta/decisions").respond(
+        200, json={**_RESPONSE, "usage": usage}
+    )
+    with pytest.raises(litellm.APIConnectionError, match="validation error"):
+        litellm.decisions(
+            model="gemini/gemini-decision-1",
+            state="Hello",
+            questions={"ok": {"type": "noul", "instructions": "Is this a greeting?"}},
+            api_key="test-key",
+        )
+
+
 class _RecordingLogger(CustomLogger):
     def __init__(self) -> None:
         super().__init__()
